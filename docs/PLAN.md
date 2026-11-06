@@ -8,18 +8,26 @@ Build a Secret Santa app that handles groups, a fair and secret draw, participan
 questionnaires, and gift recommendations. It starts as a web app and later ships to
 the Apple App Store and Google Play.
 
-**The first real launch is our family's 2026 exchange.** Christmas is about 7 weeks
-away, so the plan works backward from that date:
+**The first real launch is our family's 2026 exchange, going out next week.**
 
-| Milestone | Target date | Why |
+The draw does **not** wait for questionnaires. The organizer adds the family, the draw
+runs, and everyone learns their match right away. People then fill out their
+questionnaire whenever they like, and **each time someone updates their answers, their
+Secret Santa is notified** and sees the latest profile (and, from Phase 2, refreshed
+gift ideas).
+
+| Milestone | Target date | What happens |
 |---|---|---|
-| Family MVP live | **Sat Nov 21** | Leaves a week to collect questionnaires before the draw |
-| Family draw sent | **Sun Nov 29** | About 4 weeks of shopping time before Dec 25 |
-| Gift ideas live | Wed Dec 2 | Arrives while people are shopping |
+| Foundation + draw logic | Sat–Sun Nov 7–8 | Project setup, database, tested draw algorithm |
+| Build | Mon–Wed Nov 9–11 | Sign-in, group, exclusions, draw, match page, questionnaire, emails |
+| Dry run + security review | Thu Nov 12 | 2–3 family members test it; fix issues |
+| **Family launch + draw** | **Fri Nov 13** | Draw runs; everyone gets their match by email |
+| Questionnaires fill in | Nov 13 onward | Santas get "your giftee updated their profile" emails |
+| Gift ideas live | Fri Nov 20 | Recommendations appear on each match page and refresh as answers change |
 | Retro and public beta prep | January 2027 | Learn from the family run first |
 | App Store / Play Store | Q3 2027 | Ready well ahead of the 2027 season |
 
-Everything on the critical path to Nov 21 is in **Phase 1**. Anything that can wait waits.
+Everything needed for Nov 13 is in **Phases 0–1**. Anything that can wait waits.
 
 ## 2. How "model attached" works in this plan
 
@@ -65,12 +73,13 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 
 - `users` — id, name, email, phone, notification preferences
 - `groups` — id, name, organizer_id, budget, exchange_date, status (`draft` → `open` → `drawn` → `complete`)
-- `memberships` — group_id, user_id, role (`organizer` / `member`), invite status
+- `memberships` — group_id, name, email, user_id (nullable until they sign in), role (`organizer` / `member`). The organizer enters the roster directly, so the draw can run before anyone has an account; the match email's link signs them in.
 - `exclusions` — group_id, giver_id, receiver_id (e.g. spouses, last year's match); can be one-way or both ways
 - `assignments` — group_id, giver_id, receiver_id. **RLS: a user can only read the row where they are the giver.** The organizer cannot see matches unless they choose a "reveal" option after the exchange.
 - `questionnaire_templates` / `questions` — customizable per group
-- `answers` — user_id, group_id, question_id, value
-- `gift_suggestions` — receiver_id, type (`retail` / `diy`), title, reason, link, price band, cached output
+- `answers` — membership_id, question_id, value, updated_at
+- `profile_updates` — membership_id, changed_at, notified_at. Drives the "your giftee updated their profile" email to their Santa (batched so several quick edits send one email, not ten)
+- `gift_suggestions` — receiver_id, type (`retail` / `diy`), title, reason, link, price band, generated_from_answers_at (so ideas regenerate when answers change)
 
 ### Draw algorithm (the most important piece of logic)
 
@@ -84,42 +93,46 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 
 ## 4. Phase-by-phase plan
 
-### Phase 0 — Foundation (Nov 6–9)
+### Phase 0 — Foundation (Sat–Sun Nov 7–8)
 
 | # | Step | Model | Output |
 |---|---|---|---|
-| 0.1 | Finalize MVP scope and user stories for the family run | **Opus 5.5** | `docs/user-stories.md` |
+| 0.1 | Lock the one-week MVP scope and user stories (draw first, questionnaire after) | **Opus 5.5** | `docs/user-stories.md` |
 | 0.2 | Design the data model, RLS policies, and draw algorithm spec | **Opus 5.5** | `docs/architecture.md`, first migration |
-| 0.3 | Scaffold Turborepo, Next.js app, Supabase project, lint/format/test setup, CI on GitHub Actions | **Sonnet 5.5** | Running "hello world" on Vercel |
-| 0.4 | Generate seed data (fake family of ~12, couples, kids) and fixtures | **Haiku 5.5** | `supabase/seed.sql` |
+| 0.3 | Scaffold Turborepo, Next.js app, Supabase project, lint/format/test setup, CI on GitHub Actions; set up the email sending domain (SPF/DKIM) | **Sonnet 5.5** | Running "hello world" on Vercel |
+| 0.4 | Implement the draw algorithm in `packages/core` with property-based tests (random groups, random exclusions, verify every result is valid and that impossible rule sets are explained) | **Opus 5.5** | Fully tested draw module |
+| 0.5 | Generate seed data (fake family of ~12, couples, kids) and fixtures | **Haiku 5.5** | `supabase/seed.sql` |
 
-### Phase 1 — Family MVP (Nov 10–21) — critical path
+### Phase 1 — Family MVP (Mon Nov 9 – Fri Nov 13) — critical path
+
+| # | Step | Model | Output | Day |
+|---|---|---|---|---|
+| 1.1 | Magic-link sign-in; the link in each email signs that person straight in | **Sonnet 5.5** | Auth flow | Mon |
+| 1.2 | Create group: name, budget, exchange date, and enter the family roster (name + email) directly — no waiting for invites to be accepted | **Sonnet 5.5** | Organizer flow | Mon |
+| 1.3 | Exclusions UI: "these people shouldn't draw each other" (couples one-click) | **Sonnet 5.5** | Rules screen | Tue |
+| 1.4 | "Run the draw" (organizer) + "My match" page showing the giftee's profile, or "they haven't filled this out yet" | **Sonnet 5.5** | Draw and reveal flow | Tue |
+| 1.5 | Default questionnaire: likes, dislikes, hobbies, sizes (shirt/pants/shoe), favorite colors, allergies, "please no…", wish-list links. Can be saved partially and edited anytime | **Haiku 5.5** drafts questions → **Sonnet 5.5** builds the form | Questionnaire page | Wed |
+| 1.6 | **Profile-update notifications:** when someone saves answers, their Santa gets "Your giftee updated their profile" with a link. Batched (e.g. sent 30 min after the last edit) so a burst of edits sends one email | **Opus 5.5** designs the trigger/batching → **Sonnet 5.5** builds it | Live-updating match | Wed |
+| 1.7 | Email templates: "You've been matched — and please fill out your own questionnaire", "Your giftee updated their profile", gentle reminder for anyone who hasn't filled theirs out | **Haiku 5.5** writes copy → **Sonnet 5.5** wires up Resend | Email flow | Wed |
+| 1.8 | Security and privacy review: RLS, nobody can read others' matches, links can't be guessed, update emails never reveal who the Santa is | **Opus 5.5** | Review notes + fixes | Thu |
+| 1.9 | End-to-end test of the whole flow (Playwright): roster → draw → match email → questionnaire edit → Santa notified | **Sonnet 5.5** | Green CI | Thu |
+| 1.10 | Dry run with 2–3 family members on their phones, fix friction | **Sonnet 5.5** for fixes | Go/no-go | Thu |
+| 1.11 | **Launch: run the real draw, match emails go out** | Organizer (you) | Family is live | **Fri** |
+
+Deferred out of the launch week: anonymous Santa ↔ giftee messaging (moves to Phase 2) and SMS.
+
+### Phase 2 — Gift recommendations, messaging, SMS (Nov 14 – Nov 25)
 
 | # | Step | Model | Output |
 |---|---|---|---|
-| 1.1 | Implement the draw algorithm in `packages/core` with property-based tests (random groups, random exclusions, verify every result is valid and that impossible rule sets are explained) | **Opus 5.5** | Fully tested draw module |
-| 1.2 | Magic-link sign-in and basic profile (name, email, phone optional) | **Sonnet 5.5** | Auth flow |
-| 1.3 | Create group: name, budget, exchange date, invite by email link | **Sonnet 5.5** | Organizer flow |
-| 1.4 | Exclusions UI: "these people shouldn't draw each other" (couples one-click) | **Sonnet 5.5** | Rules screen |
-| 1.5 | Default questionnaire: likes, dislikes, hobbies, sizes (shirt/pants/shoe), favorite colors, allergies, "please no…", wish-list links | **Haiku 5.5** drafts questions → **Sonnet 5.5** builds the form | Questionnaire page |
-| 1.6 | "Run the draw" + "My match" page showing the receiver's profile and answers | **Sonnet 5.5** | Draw and reveal flow |
-| 1.7 | Email notifications: invite, reminder to fill questionnaire, "you've been matched" | **Haiku 5.5** writes templates → **Sonnet 5.5** wires up Resend | Email flow |
-| 1.8 | Anonymous Santa ↔ giftee messaging ("what size are you, really?") | **Sonnet 5.5** | Simple message thread (stretch goal; can slip to Phase 2) |
-| 1.9 | Security and privacy review: RLS, nobody can read others' matches, invite links can't be guessed | **Opus 5.5** | Review notes + fixes |
-| 1.10 | End-to-end tests of the whole family flow (Playwright) | **Sonnet 5.5** | Green CI |
-| 1.11 | Dry run with 2–3 family members, fix friction | **Sonnet 5.5** for fixes | Go/no-go for Nov 21 |
-
-### Phase 2 — Gift recommendations and SMS (Nov 22 – Dec 5)
-
-| # | Step | Model | Output |
-|---|---|---|---|
-| 2.1 | Design the recommendation prompt and output schema (retail + DIY, reason tied to answers, price within budget, no items from the "please no" list) | **Opus 5.5** | Prompt spec + eval set of ~20 fake profiles |
-| 2.2 | Build the runtime engine: Sonnet 5.5 with structured output, cached per receiver, regenerate on demand | **Sonnet 5.5** (builds it) / **Sonnet 5.5** (runs it) | "Gift ideas" panel on the match page |
+| 2.1 | Design the recommendation prompt and output schema (retail + DIY, reason tied to answers, price within budget, no items from the "please no" list, works with partial answers) | **Opus 5.5** | Prompt spec + eval set of ~20 fake profiles |
+| 2.2 | Build the runtime engine: Sonnet 5.5 with structured output, cached per receiver, **automatically regenerated when the giftee updates their answers** (folded into the same update email: "new gift ideas are ready") | **Sonnet 5.5** (builds it) / **Sonnet 5.5** (runs it) | "Gift ideas" panel on the match page, live Fri Nov 20 |
 | 2.3 | Retail links: start with search links (Amazon, Etsy, Target) built from the suggestion's keywords; add affiliate tags later | **Sonnet 5.5** | Clickable shop links |
 | 2.4 | DIY ideas: materials list, difficulty, time needed | **Sonnet 5.5** runtime, prompt by **Opus 5.5** | DIY cards |
 | 2.5 | Summarize long questionnaire answers into a one-line "gift profile" | **Haiku 5.5** runtime | Faster, cheaper prompts |
-| 2.6 | SMS notifications via Twilio (start 10DLC registration in Phase 0 — it can take weeks) | **Sonnet 5.5** | SMS match alerts |
-| 2.7 | Evaluate suggestion quality against the eval set; check budget and "no" rules are respected | **Opus 5.5** | Quality report |
+| 2.6 | Anonymous Santa ↔ giftee messaging ("what size are you, really?") | **Sonnet 5.5** | Simple message thread |
+| 2.7 | SMS notifications via Twilio, only if the family wants it (10DLC registration can take weeks) | **Sonnet 5.5** | SMS match alerts |
+| 2.8 | Evaluate suggestion quality against the eval set; check budget and "no" rules are respected | **Opus 5.5** | Quality report |
 
 ### Phase 3 — Hardening for the public (Jan – Mar 2027)
 
@@ -158,11 +171,14 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 
 | Risk | Mitigation |
 |---|---|
-| Not ready for the family deadline | Phase 1 is deliberately small; messaging (1.8) and gift ideas (Phase 2) are allowed to slip without blocking the draw |
-| The organizer accidentally sees matches | Enforced in the database (RLS), not just hidden in the UI; reviewed in 1.9 |
+| One-week deadline is tight | Launch scope is only: roster, exclusions, draw, match page, questionnaire, emails. Messaging, gift ideas, and SMS ship after launch without blocking anything |
+| Santas buy before the questionnaire is filled in | Match email asks everyone to fill out their own profile; reminders go to anyone still blank after 2–3 days; the match page says clearly when a profile is empty |
+| Too many update emails | Edits are batched into one email per burst; a daily cap per Santa |
+| Organizer typo in an email address after the draw | Organizer can fix an email and resend that person's match without re-drawing |
+| The organizer accidentally sees matches | Enforced in the database (RLS), not just hidden in the UI; reviewed in 1.8 |
 | Exclusions make the draw impossible | The algorithm names the conflicting rule and suggests a fix |
 | Emails land in spam | Verified sending domain (SPF/DKIM/DMARC) in Phase 0 |
-| SMS registration delays | Start Twilio 10DLC paperwork immediately; email is the Phase 1 fallback |
+| SMS registration delays | Email only for launch; SMS is optional in Phase 2 |
 | AI suggests something off-budget or on the "no" list | Structured output + validation + eval set (2.1, 2.7) |
 | AI cost at scale | Cache suggestions, use Haiku for summaries, per-user regenerate limits |
 
@@ -171,5 +187,6 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 - [ ] Every family member can sign in from a phone browser without help
 - [ ] Organizer can add couples as exclusions in under a minute
 - [ ] Draw produces a valid loop and nobody can see anyone else's match
-- [ ] Everyone gets their match by email on Nov 29
-- [ ] Each person sees their giftee's questionnaire and at least 5 gift ideas (retail + DIY) by Dec 2
+- [ ] Everyone gets their match by email on launch day (Fri Nov 13), before any questionnaire is filled out
+- [ ] When someone fills out or edits their questionnaire, their Santa is notified and sees the new answers
+- [ ] Each person sees at least 5 gift ideas (retail + DIY) for their giftee by Fri Nov 20, refreshed as answers change
