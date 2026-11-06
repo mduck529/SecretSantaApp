@@ -22,6 +22,18 @@ gift ideas).
 must hide every match (including who is buying for them) from the organizer. They still
 get admin controls, but none of those controls ever shows or returns match data.
 
+### Decisions for the family run
+
+| Decision | Choice |
+|---|---|
+| Notifications | Email only |
+| Organizer | Takes part; sees no matches; has match-blind admin controls |
+| Who sees questionnaire answers | **Only that person's Secret Santa** (and the person themselves) |
+| Re-draw | Allowed at any time, with confirmation; everyone gets a new match email |
+| Rules | Marked right on the participant list while entering people ("can't draw: …") |
+| Budget | **$100–$150** |
+| Participants | All adults, young adults to grandparents; no kid/parent-proxy profiles needed |
+
 | Milestone | Target date | What happens |
 |---|---|---|
 | Foundation + draw logic | Sat–Sun Nov 7–8 | Project setup, database, tested draw algorithm |
@@ -42,7 +54,7 @@ Everything needed for Nov 13 is in **Phases 0–1**. Anything that can wait wait
 | Manage family list (add, remove, fix names/emails) | Names and emails | — |
 | Manage exclusions (couples, etc.) | The rules they set | — |
 | Run the draw | "Draw complete: 12 matches sent" | Every pairing |
-| Re-draw (with confirmation, emails everyone a new match) | Confirmation and send status | New pairings |
+| Re-draw any time (with confirmation, emails everyone a new match) | Confirmation and send status | New pairings |
 | Resend someone's match email (e.g. after fixing a typo) | "Sent to Aunt Sue" | Who Aunt Sue has |
 | Remove someone after the draw (drop-out) | "Fixed: 1 person got a new match" | Who was affected. The app repairs the loop by giving the dropout's Santa the dropout's giftee, so only one person's match changes |
 | Status dashboard | Per person: email delivered, signed in, questionnaire done yes/no | Questionnaire answers (only each person's Santa sees those) |
@@ -124,6 +136,15 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 
 ## 4. Phase-by-phase plan
 
+### Progress
+
+| Step | Status |
+|---|---|
+| 0.2 Data model + privacy rules | Done: `supabase/migrations/`, 34 privacy tests in `supabase/tests/rls_test.sql` |
+| 0.3 Monorepo, Next.js app, CI | Done (deploy waits on Supabase/Vercel accounts) |
+| 0.4 Draw algorithm | Done: `packages/core`, 13 tests incl. randomized and exhaustive checks; dropout/late-add repair included |
+| 0.5 Seed data | Not started |
+
 ### Phase 0 — Foundation (Sat–Sun Nov 7–8)
 
 | # | Step | Model | Output |
@@ -139,8 +160,8 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 | # | Step | Model | Output | Day |
 |---|---|---|---|---|
 | 1.1 | Magic-link sign-in; the link in each email signs that person straight in | **Sonnet 5.5** | Auth flow | Mon |
-| 1.2 | Create group: name, budget, exchange date, and enter the family roster (name + email) directly — no waiting for invites to be accepted | **Sonnet 5.5** | Organizer flow | Mon |
-| 1.3 | Exclusions UI: "these people shouldn't draw each other" (couples one-click) | **Sonnet 5.5** | Rules screen | Tue |
+| 1.2 | Create group: name, budget (default $100–$150), exchange date, and enter the family roster (name + email) directly — no waiting for invites to be accepted | **Sonnet 5.5** | Organizer flow | Mon |
+| 1.3 | Rules inline on the roster: each person row has a "can't draw" picker (two-way by default, e.g. couples) | **Sonnet 5.5** | Roster + rules screen | Mon–Tue |
 | 1.4 | "Run the draw" (organizer) + "My match" page showing the giftee's profile, or "they haven't filled this out yet". The organizer's own match page works exactly like everyone else's | **Sonnet 5.5** | Draw and reveal flow | Tue |
 | 1.4b | **Organizer admin panel:** status dashboard, resend match email, fix email, reminders, re-draw, remove a dropout with loop repair, settings (see "Organizer admin controls" above) | **Opus 5.5** designs the match-blind server functions and loop repair → **Sonnet 5.5** builds the screens | Admin panel | Tue–Wed |
 | 1.5 | Default questionnaire: likes, dislikes, hobbies, sizes (shirt/pants/shoe), favorite colors, allergies, "please no…", wish-list links. Can be saved partially and edited anytime | **Haiku 5.5** drafts questions → **Sonnet 5.5** builds the form | Questionnaire page | Wed |
@@ -207,6 +228,7 @@ Deferred out of the launch week: anonymous Santa ↔ giftee messaging (moves to 
 | Too many update emails | Edits are batched into one email per burst; a daily cap per Santa |
 | Organizer typo in an email address after the draw | Organizer can fix an email and resend that person's match without re-drawing |
 | The organizer (a participant) sees matches | Enforced in the database (RLS), not just hidden in the UI; admin functions never read pairings; reviewed in 1.8 and tested in 1.9 |
+| An organizer edits someone's email to an address they control, then signs in as that person | Can't be fully prevented when the organizer manages the roster. Mitigation: an email change detaches the old login, is written to the audit log, and (Phase 1) sends a notice to the old address |
 | Someone drops out after the draw | Loop repair changes only one person's match and emails just them |
 | Exclusions make the draw impossible | The algorithm names the conflicting rule and suggests a fix |
 | Emails land in spam | Verified sending domain (SPF/DKIM/DMARC) in Phase 0 |
