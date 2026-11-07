@@ -22,21 +22,45 @@ gift ideas).
 must hide every match (including who is buying for them) from the organizer. They still
 get admin controls, but none of those controls ever shows or returns match data.
 
+### The organizer's flow (4 steps)
+
+```
+1. Add people        2. Add rules           3. Match              4. Send
+name, email,    →    "can't draw" on   →    system pairs     →    everyone gets an email:
+phone (optional)     each person row        everyone; you         who they buy for + link
+                                            see only "12          to fill out their own
+                                            matched ✓"            questionnaire
+```
+
+- **Match and Send are separate buttons.** You can re-match as often as you like before
+  pressing Send; nothing reaches the family until you do.
+- **The questionnaire is never a prerequisite.** Matching and sending work with zero
+  questionnaires filled out.
+- **Reminder button:** from the dashboard, nudge one person or "everyone who hasn't filled
+  theirs out yet" with a reminder email. Use it as often as needed.
+- **One home for each person:** the link in their email opens their page, which has
+  (a) their own questionnaire to fill out or edit, (b) who they're buying for, with that
+  person's latest answers, and (c) gift ideas (from Phase 2). They can come back anytime.
+- When someone fills out or edits their questionnaire, their Secret Santa gets an email
+  ("Your giftee updated their profile") linking back to that page.
+
 ### Decisions for the family run
 
 | Decision | Choice |
 |---|---|
-| Notifications | Email only |
+| Notifications | Email only. Phone numbers are collected (optional) for future text or app notifications |
 | Organizer | Takes part; sees no matches; has match-blind admin controls |
 | Who sees questionnaire answers | **Only that person's Secret Santa** (and the person themselves) |
 | Re-draw | Allowed at any time, with confirmation; everyone gets a new match email |
 | Rules | Marked right on the participant list while entering people ("can't draw: …") |
 | Budget | **$100–$150** |
+| Domain | Yes: buy one to send email from (better deliverability) and to host the site |
 | Participants | All adults, young adults to grandparents; no kid/parent-proxy profiles needed |
 
 | Milestone | Target date | What happens |
 |---|---|---|
-| Foundation + draw logic | Sat–Sun Nov 7–8 | Project setup, database, tested draw algorithm |
+| Foundation + draw logic | Sat–Sun Nov 7–8 | Project setup, database, tested draw algorithm (done) |
+| Domain + accounts | This weekend | Buy domain; create Supabase, Vercel, Resend accounts; verify domain for email |
 | Build | Mon–Wed Nov 9–11 | Sign-in, group, exclusions, draw, match page, questionnaire, emails |
 | Dry run + security review | Thu Nov 12 | 2–3 family members test it; fix issues |
 | **Family launch + draw** | **Fri Nov 13** | Draw runs; everyone gets their match by email |
@@ -51,10 +75,11 @@ Everything needed for Nov 13 is in **Phases 0–1**. Anything that can wait wait
 
 | Control | What the organizer sees | What stays hidden |
 |---|---|---|
-| Manage family list (add, remove, fix names/emails) | Names and emails | — |
+| Manage family list (add, remove, fix names/emails/phones) | Names, emails, phones | — |
 | Manage exclusions (couples, etc.) | The rules they set | — |
-| Run the draw | "Draw complete: 12 matches sent" | Every pairing |
-| Re-draw any time (with confirmation, emails everyone a new match) | Confirmation and send status | New pairings |
+| Match | "12 people matched ✓" | Every pairing |
+| Send | "Sent to 12 people" plus per-person delivery status | Every pairing |
+| Re-match: free before Send; after Send it needs confirmation and a new Send | Confirmation | New pairings |
 | Resend someone's match email (e.g. after fixing a typo) | "Sent to Aunt Sue" | Who Aunt Sue has |
 | Remove someone after the draw (drop-out) | "Fixed: 1 person got a new match" | Who was affected. The app repairs the loop by giving the dropout's Santa the dropout's giftee, so only one person's match changes |
 | Status dashboard | Per person: email delivered, signed in, questionnaire done yes/no | Questionnaire answers (only each person's Santa sees those) |
@@ -160,17 +185,17 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 | # | Step | Model | Output | Day |
 |---|---|---|---|---|
 | 1.1 | Magic-link sign-in; the link in each email signs that person straight in | **Sonnet 5.5** | Auth flow | Mon |
-| 1.2 | Create group: name, budget (default $100–$150), exchange date, and enter the family roster (name + email) directly — no waiting for invites to be accepted | **Sonnet 5.5** | Organizer flow | Mon |
+| 1.2 | Create group: name, budget (default $100–$150), exchange date, and enter the family roster (name, email, optional phone) directly — no waiting for invites to be accepted | **Sonnet 5.5** | Organizer flow | Mon |
 | 1.3 | Rules inline on the roster: each person row has a "can't draw" picker (two-way by default, e.g. couples) | **Sonnet 5.5** | Roster + rules screen | Mon–Tue |
-| 1.4 | "Run the draw" (organizer) + "My match" page showing the giftee's profile, or "they haven't filled this out yet". The organizer's own match page works exactly like everyone else's | **Sonnet 5.5** | Draw and reveal flow | Tue |
-| 1.4b | **Organizer admin panel:** status dashboard, resend match email, fix email, reminders, re-draw, remove a dropout with loop repair, settings (see "Organizer admin controls" above) | **Opus 5.5** designs the match-blind server functions and loop repair → **Sonnet 5.5** builds the screens | Admin panel | Tue–Wed |
+| 1.4 | **Match** button, then a separate **Send** button (organizer) + each person's page: own questionnaire, plus "Who I'm buying for" page showing the giftee's profile, or "they haven't filled this out yet". The organizer's own match page works exactly like everyone else's | **Sonnet 5.5** | Draw and reveal flow | Tue |
+| 1.4b | **Organizer admin panel:** status dashboard, resend match email, fix email, **reminder button** (one person or everyone not done), re-draw, remove a dropout with loop repair, settings (see "Organizer admin controls" above) | **Opus 5.5** designs the match-blind server functions and loop repair → **Sonnet 5.5** builds the screens | Admin panel | Tue–Wed |
 | 1.5 | Default questionnaire: likes, dislikes, hobbies, sizes (shirt/pants/shoe), favorite colors, allergies, "please no…", wish-list links. Can be saved partially and edited anytime | **Haiku 5.5** drafts questions → **Sonnet 5.5** builds the form | Questionnaire page | Wed |
 | 1.6 | **Profile-update notifications:** when someone saves answers, their Santa gets "Your giftee updated their profile" with a link. Batched (e.g. sent 30 min after the last edit) so a burst of edits sends one email | **Opus 5.5** designs the trigger/batching → **Sonnet 5.5** builds it | Live-updating match | Wed |
 | 1.7 | Email templates: "You've been matched — and please fill out your own questionnaire", "Your giftee updated their profile", gentle reminder for anyone who hasn't filled theirs out | **Haiku 5.5** writes copy → **Sonnet 5.5** wires up Resend | Email flow | Wed |
 | 1.8 | Security and privacy review: RLS, nobody (organizer included) can read others' matches, no admin endpoint or screen leaks pairings, links can't be guessed, update emails never reveal who the Santa is | **Opus 5.5** | Review notes + fixes | Thu |
 | 1.9 | End-to-end test of the whole flow (Playwright): roster → draw → match email → questionnaire edit → Santa notified, plus admin actions (resend, dropout repair) while confirming the organizer never receives pairing data | **Sonnet 5.5** | Green CI | Thu |
 | 1.10 | Dry run with 2–3 family members on their phones, fix friction | **Sonnet 5.5** for fixes | Go/no-go | Thu |
-| 1.11 | **Launch: run the real draw, match emails go out** | Organizer (you) | Family is live | **Fri** |
+| 1.11 | **Launch: you press Match, then Send** | Organizer (you) | Family is live | **Fri** |
 
 Deferred out of the launch week: anonymous Santa ↔ giftee messaging (moves to Phase 2).
 

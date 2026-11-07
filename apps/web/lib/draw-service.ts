@@ -11,13 +11,16 @@ export type DrawOutcome =
   | { ok: false; message: string };
 
 /**
- * Runs (or re-runs) the draw for a group. `actorUserId` must come from the verified
- * session, never from the request body.
+ * The organizer's "Match" button. Makes (or remakes) the matches but sends nothing:
+ * emails go out only when the organizer presses Send. Before Send, re-matching is free.
+ * After Send, re-matching needs `confirmedAfterSend` and everyone must be sent a new email.
+ *
+ * `actorUserId` must come from the verified session, never from the request body.
  */
 export async function runGroupDraw(
   groupId: string,
   actorUserId: string,
-  mode: "draw" | "redraw",
+  { confirmedAfterSend = false }: { confirmedAfterSend?: boolean } = {},
 ): Promise<DrawOutcome> {
   const db = createAdminClient();
 
@@ -32,9 +35,10 @@ export async function runGroupDraw(
 
   const { data: group, error: groupError } = await db.from("groups").select("status").eq("id", groupId).single();
   if (groupError) throw groupError;
-  if (mode === "draw" && group.status === "drawn") {
-    return { ok: false, message: "The draw already happened. Use re-draw to start over." };
+  if (group.status === "sent" && !confirmedAfterSend) {
+    return { ok: false, message: "Matches were already sent. Confirm to re-match; everyone will need a new email." };
   }
+  const mode = group.status === "draft" ? "draw" : "redraw";
 
   const [{ data: members, error: membersError }, { data: rules, error: rulesError }] = await Promise.all([
     db.from("memberships").select("id, display_name").eq("group_id", groupId),

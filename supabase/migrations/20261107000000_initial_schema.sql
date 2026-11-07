@@ -18,9 +18,12 @@ create table public.groups (
   budget_min_cents integer not null default 10000 check (budget_min_cents >= 0),
   budget_max_cents integer not null default 15000,
   exchange_date    date,
-  status           text not null default 'draft' check (status in ('draft', 'drawn')),
+  -- draft: entering people and rules. matched: matches made, nothing sent yet (re-match freely).
+  -- sent: organizer pressed Send and match emails went out.
+  status           text not null default 'draft' check (status in ('draft', 'matched', 'sent')),
   draw_round       integer not null default 0,
   drawn_at         timestamptz,
+  sent_at          timestamptz,
   revealed_at      timestamptz,
   created_by       uuid references auth.users (id) on delete set null,
   created_at       timestamptz not null default now(),
@@ -41,10 +44,19 @@ create table public.memberships (
   match_email_sent_at      timestamptz,
   questionnaire_complete   boolean not null default false,
   questionnaire_updated_at timestamptz,
+  last_reminded_at         timestamptz,
   created_at               timestamptz not null default now(),
   unique (group_id, email)
 );
 create index memberships_user_id_idx on public.memberships (user_id);
+
+-- Phone numbers are kept apart from the roster so only admins and the person can see them.
+-- Collected now for future text/app notifications; the family run is email only.
+create table public.member_contacts (
+  membership_id uuid primary key references public.memberships (id) on delete cascade,
+  phone         text check (phone ~ '^\+[1-9][0-9]{7,14}$'),
+  updated_at    timestamptz not null default now()
+);
 
 -- A rule entered on the roster: "a can't draw b" (and b can't draw a when two_way).
 create table public.exclusion_rules (
@@ -223,6 +235,7 @@ create trigger questionnaire_saved
 
 alter table public.groups                        enable row level security;
 alter table public.memberships                   enable row level security;
+alter table public.member_contacts               enable row level security;
 alter table public.exclusion_rules               enable row level security;
 alter table public.assignments                   enable row level security;
 alter table public.questionnaire_answers         enable row level security;
@@ -256,6 +269,20 @@ create policy memberships_insert on public.memberships for insert to authenticat
 create policy memberships_update on public.memberships for update to authenticated
   using (public.is_group_admin(group_id)) with check (public.is_group_admin(group_id));
 -- No client delete: removing someone after the draw needs a loop repair (server action).
+
+-- member_contacts: admins and the person themselves.
+grant select, insert, delete on public.member_contacts to authenticated;
+grant update (phone) on public.member_contacts to authenticated;
+create policy contacts_select on public.member_contacts for select to authenticated
+  using (
+    public.is_my_membership(membership_id)
+    or public.is_group_admin((select m.group_id from public.memberships m where m.id = membership_id))
+  );
+create policy contacts_admin_write on public.member_contacts for all to authenticated
+  using (public.is_group_admin((select m.group_id from public.memberships m where m.id = membership_id)))
+  with check (public.is_group_admin((select m.group_id from public.memberships m where m.id = membership_id)));
+create policy contacts_self_update on public.member_contacts for update to authenticated
+  using (public.is_my_membership(membership_id)) with check (public.is_my_membership(membership_id));
 
 -- exclusion_rules: admins only.
 grant select, insert, delete on public.exclusion_rules to authenticated;
@@ -321,7 +348,10 @@ begin
   end if;
 
   update public.groups
-     set draw_round = draw_round + 1, status = 'drawn',
+     set draw_round = draw_round + 1,
+         -- A new draw always waits for the organizer to press Send again.
+         status = case when action in ('draw', 'redraw') then 'matched' else status end,
+         sent_at = case when action in ('draw', 'redraw') then null else sent_at end,
          drawn_at = case when action in ('draw', 'redraw') then now() else drawn_at end
    where id = gid
   returning draw_round into next_round;

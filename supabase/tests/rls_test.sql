@@ -56,8 +56,12 @@ insert into public.exclusion_rules (group_id, a_id, b_id)
   where a.email = 'alice@example.com' and b.email = 'bob@example.com';
 select tests.fails($$insert into public.memberships (group_id, display_name, email, role)
   values ((select id from public.groups), 'X', 'x@example.com', 'organizer')$$, 'cannot add a second organizer via insert');
+insert into public.member_contacts (membership_id, phone)
+  select id, '+15555550123' from public.memberships where email = 'alice@example.com';
+select tests.fails($$insert into public.member_contacts (membership_id, phone)
+  select id, '555-0123' from public.memberships where email = 'bob@example.com'$$, 'phone must be in +1... format');
 select tests.fails($$update public.memberships set user_id = auth.uid()$$, 'organizer cannot set user_id directly');
-select tests.fails($$update public.groups set status = 'drawn'$$, 'organizer cannot change draw status directly');
+select tests.fails($$update public.groups set status = 'sent'$$, 'organizer cannot change draw status directly');
 
 -- Everyone signs in and claims their roster entry.
 select tests.login('alice'); select tests.eq(public.claim_memberships(), 1, 'alice claims her entry');
@@ -75,6 +79,7 @@ select public.save_assignments(:'gid', (
 
 select tests.fails($$select public.save_assignments((select id from public.groups), '[]'::jsonb, 'redraw', null)$$,
   'save_assignments refuses an incomplete draw');
+select tests.eq((select status from public.groups), 'matched', 'matching waits for Send');
 
 -- Organizer (a participant) sees only their own match.
 set role authenticated;
@@ -86,6 +91,7 @@ select tests.fails($$insert into public.assignments select * from public.assignm
 select tests.fails($$update public.assignments set round = 99$$, 'organizer cannot update matches');
 select tests.eq((select count(*) from public.memberships), 4::bigint, 'organizer sees the roster');
 select tests.eq((select count(*) from public.exclusion_rules), 1::bigint, 'organizer sees rules');
+select tests.eq((select phone from public.member_contacts), '+15555550123', 'organizer sees phone numbers');
 select tests.fails($$select public.save_assignments((select id from public.groups), '[]'::jsonb, 'redraw', null)$$,
   'organizer cannot call save_assignments');
 
@@ -100,6 +106,7 @@ select tests.eq((select count(*) from public.questionnaire_answers), 1::bigint, 
 select tests.login('carol');
 select tests.eq((select answers->>'hobbies' from public.questionnaire_answers), 'fishing', 'carol (bob''s Santa) reads bob''s answers');
 select tests.eq((select count(*) from public.exclusion_rules), 0::bigint, 'members cannot see rules');
+select tests.eq((select count(*) from public.member_contacts), 0::bigint, 'members cannot see others'' phone numbers');
 select tests.fails($$insert into public.memberships (group_id, display_name, email)
   values ((select id from public.groups), 'Y', 'y@example.com')$$, 'members cannot add people');
 
@@ -111,6 +118,7 @@ select tests.fails($$select * from public.pending_profile_notifications$$, 'orga
 
 select tests.login('alice');
 select tests.eq((select count(*) from public.questionnaire_answers), 0::bigint, 'alice cannot read bob''s answers');
+select tests.eq((select phone from public.member_contacts), '+15555550123', 'alice sees her own phone number');
 select tests.eq((select count(*) from public.assignments), 1::bigint, 'alice sees exactly one match');
 
 select tests.login('outsider');
