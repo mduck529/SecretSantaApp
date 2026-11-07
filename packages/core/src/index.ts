@@ -4,3 +4,4 @@ export * from "./draw.js";
 export * from "./validate.js";
 export * from "./repair.js";
 export * from "./budget.js";
+export * from "./questionnaire.js";

@@ -40,7 +40,7 @@ create table public.memberships (
   role                     text not null default 'member' check (role in ('organizer', 'co_organizer', 'member')),
   -- Status columns for the organizer dashboard. None of them reveal a pairing.
   match_email_status       text not null default 'not_sent'
-                             check (match_email_status in ('not_sent', 'sent', 'delivered', 'bounced')),
+                             check (match_email_status in ('not_sent', 'sent', 'failed')),
   match_email_sent_at      timestamptz,
   questionnaire_complete   boolean not null default false,
   questionnaire_updated_at timestamptz,
@@ -89,13 +89,13 @@ create table public.questionnaire_answers (
   updated_at    timestamptz not null default now()
 );
 
--- "Your giftee updated their profile" queue. One pending row per giftee; repeated edits
--- just push last_edit_at forward, so a burst of edits becomes one email. The sender looks
--- up the CURRENT Santa at send time, so a re-draw never emails the wrong person.
-create table public.pending_profile_notifications (
+-- "Your giftee updated their profile" state, one row per giftee. A notification is due when
+-- last_edit_at > notified_at. The sender throttles to one email per giftee per 30 minutes
+-- and looks up the CURRENT Santa at send time, so a re-match never emails the wrong person.
+create table public.profile_notifications (
   membership_id uuid primary key references public.memberships (id) on delete cascade,
-  first_edit_at timestamptz not null default now(),
-  last_edit_at  timestamptz not null default now()
+  last_edit_at  timestamptz not null default now(),
+  notified_at   timestamptz
 );
 
 -- Admin actions. Never store pairings in `details`.
@@ -218,7 +218,7 @@ begin
          questionnaire_updated_at = new.updated_at
    where id = new.membership_id;
   if exists (select 1 from public.assignments a where a.receiver_id = new.membership_id) then
-    insert into public.pending_profile_notifications (membership_id)
+    insert into public.profile_notifications (membership_id)
     values (new.membership_id)
     on conflict (membership_id) do update set last_edit_at = now();
   end if;
@@ -228,6 +228,35 @@ $$;
 create trigger questionnaire_saved
   before insert or update on public.questionnaire_answers
   for each row execute function public.questionnaire_saved();
+
+-- Rules may only connect two people in the same group.
+create function public.exclusion_rules_same_group() returns trigger
+language plpgsql as $$
+begin
+  if (select count(*) from public.memberships m
+      where m.id in (new.a_id, new.b_id) and m.group_id = new.group_id) <> 2 then
+    raise exception 'rule must connect two members of the same group';
+  end if;
+  return new;
+end;
+$$;
+create trigger exclusion_rules_same_group
+  before insert or update on public.exclusion_rules
+  for each row execute function public.exclusion_rules_same_group();
+
+-- Server-only: undo an unsent match (the roster or rules changed after Match, before Send).
+create function public.reset_unsent_match(gid uuid) returns boolean
+language plpgsql security definer set search_path = '' as $$
+begin
+  if (select status from public.groups where id = gid) <> 'matched' then
+    return false;
+  end if;
+  delete from public.assignments where group_id = gid;
+  update public.groups set status = 'draft' where id = gid;
+  insert into public.audit_log (group_id, action) values (gid, 'match_cleared');
+  return true;
+end;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security
@@ -239,7 +268,7 @@ alter table public.member_contacts               enable row level security;
 alter table public.exclusion_rules               enable row level security;
 alter table public.assignments                   enable row level security;
 alter table public.questionnaire_answers         enable row level security;
-alter table public.pending_profile_notifications enable row level security;
+alter table public.profile_notifications         enable row level security;
 alter table public.audit_log                     enable row level security;
 
 -- Start from nothing; grant only what the app needs.
@@ -258,43 +287,26 @@ create policy groups_select on public.groups for select to authenticated
 create policy groups_update on public.groups for update to authenticated
   using (public.is_group_admin(id)) with check (public.is_group_admin(id));
 
--- memberships: members see the roster; admins manage it. user_id and status columns are server-only.
+-- Roster, phone numbers and rules are READ through RLS but WRITTEN only by server actions
+-- (apps/web/app/g/[id]/admin/actions.ts) after an admin check. That way a change after Match
+-- but before Send always clears the stale matches, and changes after Send repair the loop.
+
+-- memberships: members see the roster.
 grant select on public.memberships to authenticated;
-grant insert (group_id, display_name, email, role) on public.memberships to authenticated;
-grant update (display_name, email, role) on public.memberships to authenticated;
 create policy memberships_select on public.memberships for select to authenticated
   using (public.is_group_member(group_id));
-create policy memberships_insert on public.memberships for insert to authenticated
-  with check (public.is_group_admin(group_id) and role <> 'organizer');
-create policy memberships_update on public.memberships for update to authenticated
-  using (public.is_group_admin(group_id)) with check (public.is_group_admin(group_id));
--- No client delete: removing someone after the draw needs a loop repair (server action).
 
 -- member_contacts: admins and the person themselves.
-grant select, insert, delete on public.member_contacts to authenticated;
-grant update (phone) on public.member_contacts to authenticated;
+grant select on public.member_contacts to authenticated;
 create policy contacts_select on public.member_contacts for select to authenticated
   using (
     public.is_my_membership(membership_id)
     or public.is_group_admin((select m.group_id from public.memberships m where m.id = membership_id))
   );
-create policy contacts_admin_write on public.member_contacts for all to authenticated
-  using (public.is_group_admin((select m.group_id from public.memberships m where m.id = membership_id)))
-  with check (public.is_group_admin((select m.group_id from public.memberships m where m.id = membership_id)));
-create policy contacts_self_update on public.member_contacts for update to authenticated
-  using (public.is_my_membership(membership_id)) with check (public.is_my_membership(membership_id));
 
 -- exclusion_rules: admins only.
-grant select, insert, delete on public.exclusion_rules to authenticated;
+grant select on public.exclusion_rules to authenticated;
 create policy rules_admin_select on public.exclusion_rules for select to authenticated
-  using (public.is_group_admin(group_id));
-create policy rules_admin_insert on public.exclusion_rules for insert to authenticated
-  with check (
-    public.is_group_admin(group_id)
-    and exists (select 1 from public.memberships m where m.id = a_id and m.group_id = exclusion_rules.group_id)
-    and exists (select 1 from public.memberships m where m.id = b_id and m.group_id = exclusion_rules.group_id)
-  );
-create policy rules_admin_delete on public.exclusion_rules for delete to authenticated
   using (public.is_group_admin(group_id));
 
 -- assignments: read your own only (organizer included), or all after reveal. Never writable by clients.
@@ -322,7 +334,7 @@ grant select on public.audit_log to authenticated;
 create policy audit_admin_select on public.audit_log for select to authenticated
   using (public.is_group_admin(group_id));
 
--- pending_profile_notifications: server only (no grants, no policies).
+-- profile_notifications: server only (no grants, no policies).
 
 -- ---------------------------------------------------------------------------
 -- Server-only: atomically replace a group's matches.
@@ -389,6 +401,7 @@ begin
 end;
 $$;
 revoke all on function public.save_assignments(uuid, jsonb, text, uuid, uuid) from public, anon, authenticated;
+revoke all on function public.reset_unsent_match(uuid) from public, anon, authenticated;
 
 -- The server (service role) needs full access; Supabase usually grants this by default,
 -- but be explicit so the privacy model doesn't depend on project defaults.

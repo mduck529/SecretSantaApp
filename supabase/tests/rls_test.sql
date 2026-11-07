@@ -45,21 +45,33 @@ set client_min_messages = notice;
 set role authenticated;
 select tests.login('org');
 select public.create_group('Family 2026', 'Org') as gid \gset
+select tests.eq((select budget_min_cents from public.groups), 10000, 'default budget min $100');
+select tests.eq((select budget_max_cents from public.groups), 15000, 'default budget max $150');
+select tests.fails($$insert into public.memberships (group_id, display_name, email)
+  values ((select id from public.groups), 'X', 'x@example.com')$$, 'roster is written only by the server');
+select tests.fails($$delete from public.memberships$$, 'organizer cannot delete members directly');
+
+-- The server (after its admin check) writes the roster, phones and rules.
+reset role;
 insert into public.memberships (group_id, display_name, email) values
   (:'gid', 'Alice', 'alice@example.com'),
   (:'gid', 'Bob', 'bob@example.com'),
   (:'gid', 'Carol', 'carol@example.com');
-select tests.eq((select budget_min_cents from public.groups), 10000, 'default budget min $100');
-select tests.eq((select budget_max_cents from public.groups), 15000, 'default budget max $150');
 insert into public.exclusion_rules (group_id, a_id, b_id)
   select :'gid', a.id, b.id from public.memberships a, public.memberships b
   where a.email = 'alice@example.com' and b.email = 'bob@example.com';
-select tests.fails($$insert into public.memberships (group_id, display_name, email, role)
-  values ((select id from public.groups), 'X', 'x@example.com', 'organizer')$$, 'cannot add a second organizer via insert');
 insert into public.member_contacts (membership_id, phone)
   select id, '+15555550123' from public.memberships where email = 'alice@example.com';
 select tests.fails($$insert into public.member_contacts (membership_id, phone)
   select id, '555-0123' from public.memberships where email = 'bob@example.com'$$, 'phone must be in +1... format');
+insert into public.groups (id, name) values ('00000000-0000-0000-0000-0000000000ff', 'Other group');
+insert into public.memberships (group_id, display_name, email)
+  values ('00000000-0000-0000-0000-0000000000ff', 'Zed', 'zed@example.com');
+select tests.fails($$insert into public.exclusion_rules (group_id, a_id, b_id)
+  select g.group_id, g.id, z.id from public.memberships g, public.memberships z
+  where g.email = 'alice@example.com' and z.email = 'zed@example.com'$$, 'rules cannot cross groups');
+set role authenticated;
+select tests.login('org');
 select tests.fails($$update public.memberships set user_id = auth.uid()$$, 'organizer cannot set user_id directly');
 select tests.fails($$update public.groups set status = 'sent'$$, 'organizer cannot change draw status directly');
 
@@ -77,9 +89,9 @@ select public.save_assignments(:'gid', (
   join public.memberships r on r.email = v.rn || '@example.com'
 ), 'draw', null);
 
-select tests.fails($$select public.save_assignments((select id from public.groups), '[]'::jsonb, 'redraw', null)$$,
+select tests.fails(format($$select public.save_assignments(%L, '[]'::jsonb, 'redraw', null)$$, :'gid'),
   'save_assignments refuses an incomplete draw');
-select tests.eq((select status from public.groups), 'matched', 'matching waits for Send');
+select tests.eq((select status from public.groups where id = :'gid'), 'matched', 'matching waits for Send');
 
 -- Organizer (a participant) sees only their own match.
 set role authenticated;
@@ -114,7 +126,8 @@ select tests.login('org');
 select tests.eq((select count(*) from public.questionnaire_answers), 0::bigint, 'organizer cannot read bob''s answers');
 select tests.eq((select questionnaire_complete from public.memberships where email = 'bob@example.com'), true,
   'dashboard shows bob is done');
-select tests.fails($$select * from public.pending_profile_notifications$$, 'organizer cannot read notification queue');
+select tests.fails($$select * from public.profile_notifications$$, 'organizer cannot read notification queue');
+select tests.fails($$select public.reset_unsent_match((select id from public.groups))$$, 'organizer cannot call reset_unsent_match');
 
 select tests.login('alice');
 select tests.eq((select count(*) from public.questionnaire_answers), 0::bigint, 'alice cannot read bob''s answers');
@@ -127,14 +140,26 @@ select tests.eq((select count(*) from public.memberships), 0::bigint, 'outsider 
 select tests.eq((select count(*) from public.assignments), 0::bigint, 'outsider sees no matches');
 reset role;
 
-select tests.eq((select count(*) from public.pending_profile_notifications), 1::bigint, 'bob''s edit queued one notification');
+select tests.eq((select count(*) from public.profile_notifications), 1::bigint, 'bob''s edit queued one notification');
+select tests.eq(public.reset_unsent_match(:'gid'), true, 'unsent match can be cleared by the server');
+select tests.eq((select count(*) from public.assignments), 0::bigint, 'clearing removes matches');
+select public.save_assignments(:'gid', (
+  select jsonb_agg(jsonb_build_object('giver', g.id, 'receiver', r.id))
+  from (values ('org','alice'), ('alice','carol'), ('carol','bob'), ('bob','org')) v(gn, rn)
+  join public.memberships g on g.email = v.gn || '@example.com'
+  join public.memberships r on r.email = v.rn || '@example.com'
+), 'redraw', null);
+update public.groups set status = 'sent' where id = :'gid';
+select tests.eq(public.reset_unsent_match(:'gid'), false, 'a sent match is never silently cleared');
 select tests.eq((select count(*) from public.audit_log where action = 'draw'), 1::bigint, 'draw is audited');
 select tests.eq((select details ? 'pairs' from public.audit_log where action = 'draw'), false, 'audit log holds no pairings');
 
 -- Changing someone's email detaches their login.
 set role authenticated;
 select tests.login('org');
+reset role;
 update public.memberships set email = 'carol.new@example.com' where email = 'carol@example.com';
+set role authenticated;
 select tests.eq((select user_id from public.memberships where email = 'carol.new@example.com'), null::uuid,
   'email change detaches the old login');
 reset role;

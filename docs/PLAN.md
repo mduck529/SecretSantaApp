@@ -169,6 +169,14 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 | 0.3 Monorepo, Next.js app, CI | Done (deploy waits on Supabase/Vercel accounts) |
 | 0.4 Draw algorithm | Done: `packages/core`, 13 tests incl. randomized and exhaustive checks; dropout/late-add repair included |
 | 0.5 Seed data | Not started |
+| 1.1 Sign-in by emailed link (with "Continue" step so email scanners can't use up links) | Built; needs real Supabase to test end to end |
+| 1.2–1.3 Group, people (name/email/phone), rules on each row | Built |
+| 1.4 Match → Send, person page (my match + my questionnaire) | Built |
+| 1.4b Organizer panel: status badges, resend, reminders, remove/add after Send with loop repair, settings | Built |
+| 1.5 Questionnaire (16 questions, 3 required, partial saves) | Built |
+| 1.6 "Your giftee updated their profile" emails (sent on save, 30-min throttle, daily sweep) | Built |
+| 1.7 Email templates (match, changed match, update, reminder) | Built; unit-tested incl. HTML escaping |
+| 1.9 End-to-end test | Waiting on Supabase project (local Supabase images are blocked in this build environment) |
 
 ### Phase 0 — Foundation (Sat–Sun Nov 7–8)
 
