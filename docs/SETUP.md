@@ -71,6 +71,7 @@ In Vercel → Project → **Settings → Environment Variables**, add (for Produ
 | `EMAIL_FROM` | `Family Secret Santa <secretsanta8@gmail.com>` |
 | `APP_URL` | `https://YOUR-APP-URL` |
 | `CRON_SECRET` | Any long random string (protects the email-sending job) |
+| `ORGANIZER_EMAILS` | Your own email address (comma-separate several). Only these people can start a group |
 
 Then **Deployments → ⋯ → Redeploy**.
 

@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { canCreateGroups, requireUser } from "@/lib/auth";
 
 export const metadata = { title: "Your groups · Secret Santa" };
 
 export default async function HomePage() {
-  const { supabase } = await requireUser("/home");
+  const { supabase, user } = await requireUser("/home");
   await supabase.rpc("claim_memberships");
   const { data: groups } = await supabase.from("groups").select("id, name").order("created_at", { ascending: false });
 
@@ -25,11 +25,13 @@ export default async function HomePage() {
       ) : (
         <p>You&apos;re not in a group yet. If someone added you, use the link in their email.</p>
       )}
-      <p>
-        <Link className="button" href="/new">
-          Start a new group
-        </Link>
-      </p>
+      {canCreateGroups(user.email) ? (
+        <p>
+          <Link className="button" href="/new">
+            Start a new group
+          </Link>
+        </p>
+      ) : null}
       <SignOut />
     </main>
   );

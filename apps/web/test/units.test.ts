@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { explainProblem, formatExchangeDate, groupBudget, normalizeEmail, normalizePhone } from "@/lib/group-service";
-import { matchEmail, profileUpdatedEmail, reminderEmail } from "@/lib/email/templates";
-import { safeNext } from "@/lib/auth";
+import { emailChangedNotice, maskEmail, matchEmail, profileUpdatedEmail, reminderEmail } from "@/lib/email/templates";
+import { canCreateGroups, deadLinkOutcome, safeNext } from "@/lib/auth";
 
 describe("normalizePhone", () => {
   it.each([
@@ -92,5 +92,44 @@ describe("email templates", () => {
     expect(e.html).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(profileUpdatedEmail({ to: "a@b.c", name: "<b>", giftee: "<i>", link: "https://x" }).html).not.toMatch(/<b>|<i>/);
     expect(reminderEmail({ to: "a@b.c", name: "<b>", groupName: "<i>", link: "https://x" }).html).not.toMatch(/<b>|<i>/);
+  });
+});
+
+describe("emailChangedNotice", () => {
+  const e = emailChangedNotice({ to: "old@example.com", name: "<b>Sue", groupName: "Family <2026>", newEmail: "someone.new@example.com" });
+  it("goes to the old address, masks the new one, and carries no link", () => {
+    expect(e.to).toBe("old@example.com");
+    expect(e.html).toContain("s•••@example.com");
+    expect(e.html + e.text).not.toContain("someone.new");
+    expect(e.html).not.toContain("<a ");
+    expect(e.html).not.toMatch(/<b>Sue|<2026>/);
+  });
+  it("masks odd addresses safely", () => {
+    expect(maskEmail("a@b.co")).toBe("a•••@b.co");
+    expect(maskEmail("nonsense")).toBe("•••");
+  });
+});
+
+describe("deadLinkOutcome", () => {
+  it("lets a signed-in person through on their own old link", () => {
+    expect(deadLinkOutcome("sue@example.com", "Sue@Example.com ")).toBe("go");
+    expect(deadLinkOutcome("sue@example.com", "")).toBe("go");
+  });
+  it("never lets one person through on another person's link, or anyone signed out", () => {
+    expect(deadLinkOutcome("sue@example.com", "bob@example.com")).toBe("expired");
+    expect(deadLinkOutcome(null, "sue@example.com")).toBe("expired");
+    expect(deadLinkOutcome(undefined, "")).toBe("expired");
+  });
+});
+
+describe("canCreateGroups", () => {
+  it("allows only listed emails", () => {
+    expect(canCreateGroups("Me@Example.com", "me@example.com, other@example.com", true)).toBe(true);
+    expect(canCreateGroups("stranger@example.com", "me@example.com", true)).toBe(false);
+    expect(canCreateGroups(null, "me@example.com", true)).toBe(false);
+  });
+  it("with no list: nobody in production, anyone in development", () => {
+    expect(canCreateGroups("me@example.com", "", true)).toBe(false);
+    expect(canCreateGroups("me@example.com", undefined, false)).toBe(true);
   });
 });

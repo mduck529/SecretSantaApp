@@ -48,3 +48,21 @@ export async function requireAdmin(groupId: string) {
 export function safeNext(next: unknown, fallback = "/home"): string {
   return typeof next === "string" && next.startsWith("/") && !next.startsWith("//") ? next : fallback;
 }
+
+/**
+ * What to do when a sign-in link no longer works (links are one-time and expire).
+ * If the person is already signed in as the address the link was sent to, let them
+ * through; a link with no address on it accepts whoever is signed in.
+ */
+export function deadLinkOutcome(sessionEmail: string | null | undefined, linkEmail: string | null | undefined): "go" | "expired" {
+  if (!sessionEmail) return "expired";
+  const link = (linkEmail ?? "").trim().toLowerCase();
+  return !link || link === sessionEmail.trim().toLowerCase() ? "go" : "expired";
+}
+
+/** Who may create groups: the comma-separated ORGANIZER_EMAILS list. Unset allows anyone outside production only. */
+export function canCreateGroups(email: string | null | undefined, list = process.env.ORGANIZER_EMAILS, production = process.env.NODE_ENV === "production"): boolean {
+  const allowed = (list ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  if (!allowed.length) return !production;
+  return Boolean(email) && allowed.includes(email!.trim().toLowerCase());
+}

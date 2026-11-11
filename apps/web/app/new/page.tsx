@@ -1,11 +1,19 @@
 import { ActionForm, SubmitButton } from "@/components/action-form";
-import { requireUser } from "@/lib/auth";
+import { canCreateGroups, requireUser } from "@/lib/auth";
 import { createGroup } from "./actions";
 
 export const metadata = { title: "New group · Secret Santa" };
 
 export default async function NewGroupPage() {
-  await requireUser("/new");
+  const { user } = await requireUser("/new");
+  if (!canCreateGroups(user.email)) {
+    return (
+      <main className="narrow">
+        <h1>Start a Secret Santa</h1>
+        <p>Only the organizer can start a group here. If someone added you to theirs, use the link in their email.</p>
+      </main>
+    );
+  }
   return (
     <main className="narrow">
       <h1>Start a Secret Santa</h1>

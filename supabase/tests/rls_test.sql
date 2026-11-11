@@ -42,9 +42,12 @@ insert into auth.users values
 set client_min_messages = notice;
 
 -- Organizer creates the group and enters the roster with a rule.
+select public.create_group_as('00000000-0000-0000-0000-00000000000a', 'Org@Example.com', 'Family 2026', 'Org') as gid \gset
 set role authenticated;
 select tests.login('org');
-select public.create_group('Family 2026', 'Org') as gid \gset
+select tests.fails($$select public.create_group_as(auth.uid(), 'org@example.com', 'Mine', 'Org')$$,
+  'signed-in users cannot create groups directly');
+select tests.eq((select role from public.memberships), 'organizer', 'creator is the organizer (email lowercased, account linked)');
 select tests.eq((select budget_min_cents from public.groups), 10000, 'default budget min $100');
 select tests.eq((select budget_max_cents from public.groups), 15000, 'default budget max $150');
 select tests.fails($$insert into public.memberships (group_id, display_name, email)
@@ -143,12 +146,17 @@ reset role;
 select tests.eq((select count(*) from public.profile_notifications), 1::bigint, 'bob''s edit queued one notification');
 select tests.eq(public.reset_unsent_match(:'gid'), true, 'unsent match can be cleared by the server');
 select tests.eq((select count(*) from public.assignments), 0::bigint, 'clearing removes matches');
+update public.memberships set match_email_status = 'sent', match_email_sent_at = now();
 select public.save_assignments(:'gid', (
   select jsonb_agg(jsonb_build_object('giver', g.id, 'receiver', r.id))
   from (values ('org','alice'), ('alice','carol'), ('carol','bob'), ('bob','org')) v(gn, rn)
   join public.memberships g on g.email = v.gn || '@example.com'
   join public.memberships r on r.email = v.rn || '@example.com'
 ), 'redraw', null);
+select tests.eq((select count(*) from public.memberships where group_id = :'gid' and match_email_status <> 'not_sent'), 0::bigint,
+  'a new draw resets everyone to "not emailed yet"');
+select tests.eq((select count(*) from public.memberships where group_id = :'gid' and match_email_sent_at is not null), 4::bigint,
+  'but remembers who had an earlier match email');
 update public.groups set status = 'sent' where id = :'gid';
 select tests.eq(public.reset_unsent_match(:'gid'), false, 'a sent match is never silently cleared');
 select tests.eq((select count(*) from public.audit_log where action = 'draw'), 1::bigint, 'draw is audited');

@@ -1,11 +1,15 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { canCreateGroups, requireUser } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionState } from "@/components/action-form";
 
 export async function createGroup(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { supabase } = await requireUser("/new");
+  const { user } = await requireUser("/new");
+  if (!user.email || !canCreateGroups(user.email)) {
+    return { ok: false, message: "Only the organizer can start a group here." };
+  }
   const name = String(formData.get("name") ?? "").trim();
   const myName = String(formData.get("my_name") ?? "").trim();
   const min = Math.round(Number(formData.get("budget_min") ?? 100) * 100);
@@ -15,7 +19,10 @@ export async function createGroup(_prev: ActionState, formData: FormData): Promi
   if (!Number.isFinite(min) || !Number.isFinite(max) || min < 0 || max < min) {
     return { ok: false, message: "Budget: the maximum must be at least the minimum." };
   }
-  const { data, error } = await supabase.rpc("create_group", {
+  // The owner comes from the verified session, never from the form.
+  const { data, error } = await createAdminClient().rpc("create_group_as", {
+    owner_id: user.id,
+    owner_email: user.email,
     group_name: name,
     organizer_name: myName,
     budget_min: min,
@@ -23,7 +30,7 @@ export async function createGroup(_prev: ActionState, formData: FormData): Promi
     exchange: date,
   });
   if (error) {
-    console.error("create_group", error);
+    console.error("create_group_as", error);
     return { ok: false, message: "Couldn't create the group. Please try again." };
   }
   redirect(`/g/${data}/admin`);

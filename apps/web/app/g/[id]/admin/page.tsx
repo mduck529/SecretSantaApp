@@ -17,6 +17,9 @@ import {
 
 export const metadata = { title: "Organizer · Secret Santa" };
 
+// Send emails everyone one at a time; give it room.
+export const maxDuration = 60;
+
 /**
  * Organizer page. Everything here is read through Row Level Security as the organizer,
  * who can't read anyone's match or answers, so this page cannot show pairings.

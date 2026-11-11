@@ -397,19 +397,19 @@ Phases 3–5 in PLAN.md (public hardening, mobile, growth) are unchanged.
 ## 5. Checklist
 
 Owner
-- [ ] H1 `main` branch, Vercel production branch
-- [ ] H2 Vercel environment variables
-- [ ] H3 Supabase email rate limit
-- [ ] H4 shared-email decision
+- [x] H1 `main` branch, Vercel production branch (still to do by hand: make `main` the default branch in GitHub → Settings)
+- [x] H2 Vercel environment variables (`ORGANIZER_EMAILS` still to add, see L3)
+- [x] H3 Supabase email rate limit (now 100 per hour)
+- [x] H4 shared-email decision: nobody shares an address; 16 people expected
 - [ ] H5 dry run
 - [ ] H6 launch
 - [ ] H7 Anthropic API key
 
 Launch
-- [ ] L1 forgiving sign-in links
-- [ ] L2 organizer edge cases
-- [ ] L3 close the open door
-- [ ] L4 email-change notice
+- [x] L1 forgiving sign-in links (the Supabase template change was dropped: with one group, `/home` already lands on the right page)
+- [x] L2 organizer edge cases (code done; migration `20261111000000_launch_hardening.sql` must be applied to production before this code is deployed)
+- [x] L3 close the open door (code done; needs the same migration and `ORGANIZER_EMAILS` in Vercel)
+- [x] L4 email-change notice
 - [ ] L5 end-to-end test
 - [ ] L6 security review
 - [ ] L7 migration path

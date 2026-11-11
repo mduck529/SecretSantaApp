@@ -13,7 +13,7 @@ import {
 import { createAdminClient } from "./supabase/admin";
 import { signInLink } from "./links";
 import { sendEmails, type OutgoingEmail } from "./email/send";
-import { matchEmail, profileUpdatedEmail, reminderEmail } from "./email/templates";
+import { emailChangedNotice, matchEmail, profileUpdatedEmail, reminderEmail } from "./email/templates";
 
 /**
  * Organizer actions. This module reads matches with the service role so it can
@@ -44,6 +44,7 @@ interface Member {
   email: string;
   role: string;
   questionnaire_updated_at: string | null;
+  match_email_sent_at: string | null;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -77,7 +78,7 @@ async function loadGroup(db: Db, groupId: string): Promise<Group> {
 async function loadMembers(db: Db, groupId: string): Promise<Member[]> {
   const { data, error } = await db
     .from("memberships")
-    .select("id, display_name, email, role, questionnaire_updated_at")
+    .select("id, display_name, email, role, questionnaire_updated_at, match_email_sent_at")
     .eq("group_id", groupId)
     .order("created_at");
   if (error) throw error;
@@ -220,13 +221,25 @@ export async function addMember(
     }
     if (group.status === "sent") {
       // Splice the newcomer into the existing loop; only one other person's match changes.
-      const result = addParticipant(await loadAssignments(db, groupId), memberId, {
-        exclusions: await loadExclusions(db, groupId),
-      });
-      if (!result.ok) {
-        return { ok: true, message: `Added ${name}, but they don't have a match yet. Re-match everyone to include them.` };
+      // Never leave someone on the roster without a match: undo the insert if they can't be fitted in.
+      const undo = () => db.from("memberships").delete().eq("id", memberId).eq("group_id", groupId);
+      let result;
+      try {
+        result = addParticipant(await loadAssignments(db, groupId), memberId, {
+          exclusions: await loadExclusions(db, groupId),
+        });
+        if (result.ok) await saveAssignments(db, groupId, result.assignments, "member_added", actorUserId);
+      } catch (err) {
+        await undo();
+        throw err;
       }
-      await saveAssignments(db, groupId, result.assignments, "member_added", actorUserId);
+      if (!result.ok) {
+        await undo();
+        return {
+          ok: false,
+          message: `Couldn't fit ${name} in without changing everyone's match. To include them, press Re-match, add them, then Send again.`,
+        };
+      }
       const sent = await emailMatches(db, group, result.changedGivers, { changedIds: result.changedGivers.filter((g) => g !== memberId) });
       return {
         ok: true,
@@ -254,7 +267,7 @@ export async function updateMember(
     const group = await loadGroup(db, groupId);
     const { data: before } = await db
       .from("memberships")
-      .select("email")
+      .select("email, display_name")
       .eq("id", memberId)
       .eq("group_id", groupId)
       .single();
@@ -268,8 +281,15 @@ export async function updateMember(
     await savePhone(db, memberId, phone);
     const emailChanged = before.email !== email;
     await audit(db, groupId, actorUserId, "member_updated", { email_changed: emailChanged });
-    if (emailChanged && group.status === "sent") {
-      return { ok: true, message: `Saved. Their email changed, so press "Resend" to send their match to the new address.` };
+    if (emailChanged && group.status !== "draft") {
+      // Matches exist, so a changed address could be used to read someone's match. Tell the old address.
+      const [told] = await sendEmails([
+        emailChangedNotice({ to: before.email as string, name: before.display_name as string, groupName: group.name, newEmail: email }),
+      ]);
+      const toldNote = told ? " We let their old address know about the change." : "";
+      return group.status === "sent"
+        ? { ok: true, message: `Saved. Their email changed, so press "Resend match email" to send their match to the new address.${toldNote}` }
+        : { ok: true, message: `Saved.${toldNote}` };
     }
     return { ok: true, message: "Saved." };
   } catch (err) {
@@ -295,6 +315,13 @@ export async function removeMember(groupId: string, actorUserId: string, memberI
       const result = removeParticipant(await loadAssignments(db, groupId), memberId, {
         exclusions: await loadExclusions(db, groupId),
       });
+      if (!result.ok && result.reason === "not_in_draw") {
+        // They never had a match, so nobody else is affected.
+        const { error } = await db.from("memberships").delete().eq("id", memberId).eq("group_id", groupId);
+        if (error) throw error;
+        await audit(db, groupId, actorUserId, "member_removed");
+        return { ok: true, message: `Removed ${member.display_name}.` };
+      }
       if (!result.ok) {
         return {
           ok: false,
@@ -466,23 +493,21 @@ async function emailMatches(
   const exchangeDate = formatExchangeDate(group.exchange_date);
 
   const targets = giverIds.map((id) => byId.get(id)).filter((m): m is Member => Boolean(m && receiverOf.has(m.id)));
-  const emails: OutgoingEmail[] = [];
-  for (const m of targets) {
+  const links = await Promise.all(targets.map((m) => signInLink(m.email, `/g/${group.id}`)));
+  const emails: OutgoingEmail[] = targets.map((m, i) => {
     const giftee = byId.get(receiverOf.get(m.id)!)!;
-    emails.push(
-      matchEmail({
-        to: m.email,
-        name: m.display_name,
-        giftee: giftee.display_name,
-        groupName: group.name,
-        budget,
-        exchangeDate,
-        gifteeHasAnswers: Boolean(giftee.questionnaire_updated_at),
-        link: await signInLink(m.email, `/g/${group.id}`),
-        changed: changedIds.includes(m.id),
-      }),
-    );
-  }
+    return matchEmail({
+      to: m.email,
+      name: m.display_name,
+      giftee: giftee.display_name,
+      groupName: group.name,
+      budget,
+      exchangeDate,
+      gifteeHasAnswers: Boolean(giftee.questionnaire_updated_at),
+      link: links[i]!,
+      changed: changedIds.includes(m.id),
+    });
+  });
   const results = await sendEmails(emails);
   const now = new Date().toISOString();
   const okIds = targets.filter((_, i) => results[i]).map((m) => m.id);
@@ -515,9 +540,31 @@ export async function sendAllMatches(groupId: string, actorUserId: string): Prom
     if (group.status === "draft") return { ok: false, message: "Press Match first." };
     if (group.status === "sent") return { ok: false, message: "Already sent. Use Resend for one person, or re-match to start over." };
 
+    // Claim the send first, so a second click or a second tab can't email everyone twice.
+    const { data: claimed, error: claimError } = await db
+      .from("groups")
+      .update({ status: "sent", sent_at: new Date().toISOString() })
+      .eq("id", groupId)
+      .eq("status", "matched")
+      .select("id");
+    if (claimError) throw claimError;
+    if (!claimed?.length) return { ok: false, message: "Already sending. Refresh the page in a moment to see the result." };
+
     const members = await loadMembers(db, groupId);
-    const result = await emailMatches(db, group, members.map((m) => m.id));
-    await db.from("groups").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", groupId);
+    // After a re-match, people who already got an earlier match are told theirs has changed.
+    const changedIds = members.filter((m) => m.match_email_sent_at).map((m) => m.id);
+    let result;
+    try {
+      result = await emailMatches(db, group, members.map((m) => m.id), { changedIds });
+    } catch (err) {
+      await db.from("groups").update({ status: "matched", sent_at: null }).eq("id", groupId);
+      throw err;
+    }
+    if (result.sent === 0) {
+      await db.from("groups").update({ status: "matched", sent_at: null }).eq("id", groupId);
+      await audit(db, groupId, actorUserId, "send_failed", { failed: result.failed.length });
+      return { ok: false, message: "No emails could be sent, so nothing has changed. Please try Send again in a few minutes." };
+    }
     await audit(db, groupId, actorUserId, "sent", { sent: result.sent, failed: result.failed.length });
     return {
       ok: result.failed.length === 0,
