@@ -163,6 +163,8 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 
 ### Progress
 
+> **Current status, review findings and the task queue live in [`TASKS.md`](TASKS.md)** (reviewed 2026-11-11). The table below is the Nov 7 snapshot.
+
 | Step | Status |
 |---|---|
 | 0.2 Data model + privacy rules | Done: `supabase/migrations/`, 34 privacy tests in `supabase/tests/rls_test.sql` |

@@ -2,6 +2,7 @@
 
 Draw names with rules (no spouses, etc.), tell your Secret Santa what you'd love,
 and get gift ideas. Web first, iOS and Android later. See [`docs/PLAN.md`](docs/PLAN.md).
+Current status and the task queue: [`docs/TASKS.md`](docs/TASKS.md).
 
 ## Layout
 
