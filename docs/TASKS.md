@@ -394,6 +394,28 @@ Phases 3–5 in PLAN.md (public hardening, mobile, growth) are unchanged.
 
 ---
 
+## 4b. Branches ready for other models
+
+Each branch starts from the launch-hardening code. Open a session on the branch with the
+model shown and give it the prompt. No task here needs the top-tier model.
+
+| Branch | Task | Model | Start after |
+|---|---|---|---|
+| `task/l8-seed-dryrun-docs` | L8 | Haiku 5.5 | Now |
+| `task/l7-migration-path` | L7 | Sonnet 5.5 | Now |
+| `task/l5-e2e-test` | L5 | Sonnet 5.5 | Now |
+| `task/p8-lint` | P8 | Haiku 5.5 | Now |
+| `task/l6-security-review` | L6 | Opus 5.5 | Now (review only; small fixes) |
+| `task/g1-g2-gift-design` | G1, G2 | Opus 5.5 | After launch |
+| `task/g3-g4-gift-engine-ui` | G3, G4 | Sonnet 5.5 | After G1/G2 merge (rebase on `main` first) |
+| `task/p1-reveal` | P1 | Sonnet 5.5 | After launch |
+
+Prompt to paste (change the task ID):
+
+> Read `docs/TASKS.md` section 3 (rules) and task **L8** in section 4. Do exactly that task
+> on this branch, run the four checks, tick it in section 5, commit, push, and open a pull
+> request into `main`. Do not change Vercel or Supabase settings and do not apply migrations.
+
 ## 5. Checklist
 
 Owner
