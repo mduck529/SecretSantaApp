@@ -1,4 +1,5 @@
 import "server-only";
+import nodemailer from "nodemailer";
 import { serverEnv } from "../env";
 
 export interface OutgoingEmail {
@@ -9,35 +10,42 @@ export interface OutgoingEmail {
 }
 
 /**
- * Sends emails through Resend's batch API (up to 100 per request).
- * Returns one success flag per email, in order. Without RESEND_API_KEY outside
- * production, prints the emails to the server log instead (for local development).
+ * Sends emails over SMTP (Gmail by default: SMTP_USER is the Gmail address, SMTP_PASS is a
+ * Google app password). Emails go out one at a time over a single pooled connection.
+ * Returns one success flag per email, in order. Without SMTP_PASS outside production,
+ * prints the emails to the server log instead (for local development).
  */
 export async function sendEmails(emails: readonly OutgoingEmail[]): Promise<boolean[]> {
-  const apiKey = serverEnv.resendApiKey();
-  if (!apiKey) {
-    if (process.env.NODE_ENV === "production") throw new Error("RESEND_API_KEY is not set");
+  const smtp = serverEnv.smtp();
+  if (!smtp) {
+    if (process.env.NODE_ENV === "production") throw new Error("SMTP_USER and SMTP_PASS are not set");
     for (const e of emails) console.info(`[email:dev] to=${e.to} subject="${e.subject}"\n${e.text}\n`);
     return emails.map(() => true);
   }
+  if (emails.length === 0) return [];
+
+  const transport = nodemailer.createTransport({
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.port === 465,
+    auth: { user: smtp.user, pass: smtp.pass },
+    pool: true,
+    maxConnections: 1,
+  });
 
   const results: boolean[] = [];
-  for (let i = 0; i < emails.length; i += 100) {
-    const chunk = emails.slice(i, i + 100);
-    try {
-      const res = await fetch("https://api.resend.com/emails/batch", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(
-          chunk.map((e) => ({ from: serverEnv.emailFrom(), to: [e.to], subject: e.subject, html: e.html, text: e.text })),
-        ),
-      });
-      if (!res.ok) console.error(`Resend batch failed: ${res.status} ${await res.text()}`);
-      results.push(...chunk.map(() => res.ok));
-    } catch (err) {
-      console.error("Resend batch error", err);
-      results.push(...chunk.map(() => false));
+  try {
+    for (const e of emails) {
+      try {
+        await transport.sendMail({ from: serverEnv.emailFrom(), to: e.to, subject: e.subject, html: e.html, text: e.text });
+        results.push(true);
+      } catch (err) {
+        console.error(`Email to ${e.to} failed`, err);
+        results.push(false);
+      }
     }
+  } finally {
+    transport.close();
   }
   return results;
 }

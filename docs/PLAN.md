@@ -60,7 +60,7 @@ phone (optional)     each person row        everyone; you         who they buy f
 | Milestone | Target date | What happens |
 |---|---|---|
 | Foundation + draw logic | Sat–Sun Nov 7–8 | Project setup, database, tested draw algorithm (done) |
-| Domain + accounts | This weekend | Buy domain; create Supabase, Vercel, Resend accounts; verify domain for email |
+| Domain + accounts | This weekend | Create Supabase and Vercel accounts; Gmail app password for email (no domain needed) |
 | Build | Mon–Wed Nov 9–11 | Sign-in, group, exclusions, draw, match page, questionnaire, emails |
 | Dry run + security review | Thu Nov 12 | 2–3 family members test it; fix issues |
 | **Family launch + draw** | **Fri Nov 13** | Draw runs; everyone gets their match by email |
@@ -132,7 +132,7 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 |---|---|---|
 | Backend / DB / Auth | **Supabase** (Postgres + Auth + Row Level Security) | Magic-link login fits families; RLS keeps draw results private at the database level; works with web and Expo |
 | Web hosting | Vercel | Zero-config Next.js |
-| Email | Resend (+ React Email templates) | Simple API, good deliverability |
+| Email | Gmail SMTP via Nodemailer (`secretsanta8@gmail.com`) | Free, no domain needed, lands in inboxes; ~500/day is plenty |
 | Gift ideas | Claude API (Sonnet 5.5) | Turns questionnaire answers into structured retail + DIY suggestions |
 | Mobile | Expo + EAS Build | One codebase for iOS and Android, reuses `packages/core` |
 
@@ -199,7 +199,7 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 | 1.4b | **Organizer admin panel:** status dashboard, resend match email, fix email, **reminder button** (one person or everyone not done), re-draw, remove a dropout with loop repair, settings (see "Organizer admin controls" above) | **Opus 5.5** designs the match-blind server functions and loop repair → **Sonnet 5.5** builds the screens | Admin panel | Tue–Wed |
 | 1.5 | Default questionnaire: likes, dislikes, hobbies, sizes (shirt/pants/shoe), favorite colors, allergies, "please no…", wish-list links. Can be saved partially and edited anytime | **Haiku 5.5** drafts questions → **Sonnet 5.5** builds the form | Questionnaire page | Wed |
 | 1.6 | **Profile-update notifications:** when someone saves answers, their Santa gets "Your giftee updated their profile" with a link. Batched (e.g. sent 30 min after the last edit) so a burst of edits sends one email | **Opus 5.5** designs the trigger/batching → **Sonnet 5.5** builds it | Live-updating match | Wed |
-| 1.7 | Email templates: "You've been matched — and please fill out your own questionnaire", "Your giftee updated their profile", gentle reminder for anyone who hasn't filled theirs out | **Haiku 5.5** writes copy → **Sonnet 5.5** wires up Resend | Email flow | Wed |
+| 1.7 | Email templates: "You've been matched — and please fill out your own questionnaire", "Your giftee updated their profile", gentle reminder for anyone who hasn't filled theirs out | **Haiku 5.5** writes copy → **Sonnet 5.5** wires up email sending | Email flow | Wed |
 | 1.8 | Security and privacy review: RLS, nobody (organizer included) can read others' matches, no admin endpoint or screen leaks pairings, links can't be guessed, update emails never reveal who the Santa is | **Opus 5.5** | Review notes + fixes | Thu |
 | 1.9 | End-to-end test of the whole flow (Playwright): roster → draw → match email → questionnaire edit → Santa notified, plus admin actions (resend, dropout repair) while confirming the organizer never receives pairing data | **Sonnet 5.5** | Green CI | Thu |
 | 1.10 | Dry run with 2–3 family members on their phones, fix friction | **Sonnet 5.5** for fixes | Go/no-go | Thu |

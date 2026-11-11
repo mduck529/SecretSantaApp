@@ -12,8 +12,23 @@ export const publicEnv = {
 export const serverEnv = {
   supabaseServiceRoleKey: () => required("SUPABASE_SERVICE_ROLE_KEY"),
   appUrl: () => required("APP_URL").replace(/\/+$/, ""),
-  /** Optional in development: without it, emails are printed to the server log instead of sent. */
-  resendApiKey: () => process.env.RESEND_API_KEY || null,
-  emailFrom: () => process.env.EMAIL_FROM || "Secret Santa <onboarding@resend.dev>",
+  /**
+   * SMTP login for sending email (Gmail by default). Optional in development: without
+   * SMTP_USER and SMTP_PASS, emails are printed to the server log instead of sent.
+   */
+  smtp: () => {
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
+    if (!user || !pass) return null;
+    return {
+      host: process.env.SMTP_HOST || "smtp.gmail.com",
+      port: Number(process.env.SMTP_PORT || 465),
+      user,
+      // Google shows app passwords in groups of four ("abcd efgh ijkl mnop"); spaces are not part of it.
+      pass: pass.replace(/\s+/g, ""),
+    };
+  },
+  /** Gmail only sends as the signed-in account, so the address must match SMTP_USER. */
+  emailFrom: () => process.env.EMAIL_FROM || `Secret Santa <${process.env.SMTP_USER}>`,
   cronSecret: () => process.env.CRON_SECRET || null,
 };
