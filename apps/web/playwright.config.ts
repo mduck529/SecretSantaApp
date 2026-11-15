@@ -18,5 +18,5 @@ export default defineConfig({
   // Starts the built app unless one is already running (set E2E_BASE_URL to use your own).
   webServer: process.env.E2E_BASE_URL
     ? undefined
-    : { command: "pnpm start", url: baseURL, reuseExistingServer: !process.env.CI, timeout: 120_000 },
+    : { command: "pnpm start", url: baseURL, reuseExistingServer: !process.env.CI, timeout: 120_000, stdout: "pipe", stderr: "pipe" },
 });
