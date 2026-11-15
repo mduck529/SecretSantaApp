@@ -118,14 +118,17 @@ Chosen so the web app and the future mobile apps share as much code as possible.
 ```
 secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 ├─ apps/
-│  ├─ web/        Next.js (App Router) — Phase 1
-│  └─ mobile/     Expo (React Native) — Phase 4
+│  ├─ web/        Next.js (App Router) — Phase 1, built
+│  └─ mobile/     Expo (React Native) — Phase 4, not started
 ├─ packages/
-│  ├─ core/       Draw algorithm, validation, domain types (pure TS, fully tested)
-│  ├─ db/         Schema, migrations, generated types
-│  ├─ api-client/ Typed client used by web and mobile
-│  └─ ui/         Shared design tokens (later: shared components)
-└─ supabase/      Migrations, row-level-security policies, edge functions
+│  └─ core/       Draw algorithm, questionnaire, validation, domain types (pure TS, tested)
+├─ scripts/
+│  └─ test-db.sh  Applies migrations to a throwaway Postgres and runs the privacy tests
+├─ docs/          PLAN, TASKS, SETUP, DRY-RUN, and later SECURITY-REVIEW
+└─ supabase/      Migrations, row-level-security tests, seed.sql (dry run only)
+
+(`packages/db`, `api-client` and `ui` were planned but never created. Database types come
+from the SQL in `supabase/migrations`; shared components wait for the mobile app.)
 ```
 
 | Concern | Choice | Reason |
@@ -139,15 +142,19 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 ### Core data model
 
 - `users` — id, name, email, phone, notification preferences
-- `groups` — id, name, budget, exchange_date, status (`draft` → `open` → `drawn` → `complete`)
-- `memberships` — group_id, name, email, user_id (nullable until they sign in), role (`organizer` / `co_organizer` / `member`), email_status, questionnaire_complete. The organizer enters the roster directly, so the draw can run before anyone has an account; the match email's link signs them in.
-- `exclusions` — group_id, giver_id, receiver_id (e.g. spouses, last year's match); can be one-way or both ways
-- `assignments` — group_id, giver_id, receiver_id. **RLS: a user can only read the row where they are the giver.** The organizer is a participant and cannot see other matches either; everyone sees all matches only if the organizer turns on "reveal" after the exchange date.
-- `audit_log` — group_id, actor_id, action, created_at (admin actions; never stores pairings)
-- `questionnaire_templates` / `questions` — customizable per group
-- `answers` — membership_id, question_id, value, updated_at
-- `profile_updates` — membership_id, changed_at, notified_at. Drives the "your giftee updated their profile" email to their Santa (batched so several quick edits send one email, not ten)
-- `gift_suggestions` — receiver_id, type (`retail` / `diy`), title, reason, link, price band, generated_from_answers_at (so ideas regenerate when answers change)
+The schema is in `supabase/migrations/` (8 tables; the authoritative version is the SQL, not this list).
+
+- `groups` — id, name, budget_min_cents / budget_max_cents, exchange_date, status (`draft` → `matched` → `sent`), draw_round, drawn_at, sent_at, revealed_at (set by the reveal button, not yet built)
+- `memberships` — group_id, display_name, email (lowercase, unique per group), user_id (nullable until first sign-in), role (`organizer` / `co_organizer` / `member`), match_email_status, questionnaire_complete. The organizer enters the roster directly, so the draw can run before anyone has an account; the match email's link signs them in.
+- `member_contacts` — membership_id, phone (E.164, optional; organizer-only)
+- `exclusion_rules` — group_id, a_id, b_id, two_way. "a can't draw b", and b can't draw a when two_way
+- `assignments` — group_id, giver_id, receiver_id, round. **RLS: a user can only read the row where they are the giver** (`assignments_own`). Written only by the server. The organizer cannot see pairings either; everyone sees all matches only after reveal.
+- `questionnaire_answers` — membership_id, answers (jsonb keyed by the question keys in `packages/core/src/questionnaire.ts`), is_complete, updated_at. Visible only to the person and their Santa
+- `profile_notifications` — membership_id, last_edit_at, notified_at. Drives the "your giftee updated their profile" email to their Santa, throttled to one per 30 minutes
+- `audit_log` — group_id, actor_user_id, action, details, created_at (admin actions; never stores pairings)
+
+Not built yet: `gift_suggestions` (task G2) and the per-group custom questionnaire (Phase 3).
+The questionnaire is a fixed 15-question v1 for now (`packages/core/src/questionnaire.ts`).
 
 ### Draw algorithm (the most important piece of logic)
 
@@ -170,7 +177,7 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 | 0.2 Data model + privacy rules | Done: `supabase/migrations/`, 34 privacy tests in `supabase/tests/rls_test.sql` |
 | 0.3 Monorepo, Next.js app, CI | Done (deploy waits on Supabase/Vercel accounts) |
 | 0.4 Draw algorithm | Done: `packages/core`, 13 tests incl. randomized and exhaustive checks; dropout/late-add repair included |
-| 0.5 Seed data | Not started |
+| 0.5 Seed data | Done: `supabase/seed.sql` (dry run only, `@example.com` addresses) and `docs/DRY-RUN.md` checklist (task L8) |
 | 1.1 Sign-in by emailed link (with "Continue" step so email scanners can't use up links) | Built; needs real Supabase to test end to end |
 | 1.2–1.3 Group, people (name/email/phone), rules on each row | Built |
 | 1.4 Match → Send, person page (my match + my questionnaire) | Built |
@@ -178,7 +185,7 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 | 1.5 Questionnaire (16 questions, 3 required, partial saves) | Built |
 | 1.6 "Your giftee updated their profile" emails (sent on save, 30-min throttle, daily sweep) | Built |
 | 1.7 Email templates (match, changed match, update, reminder) | Built; unit-tested incl. HTML escaping |
-| 1.9 End-to-end test | Waiting on Supabase project (local Supabase images are blocked in this build environment) |
+| 1.9 End-to-end test | Not built (task L5). A manual dry run with the checklist in `docs/DRY-RUN.md` replaces it for the family launch |
 
 ### Phase 0 — Foundation (Sat–Sun Nov 7–8)
 

@@ -188,6 +188,7 @@ data model and reviews; **Sonnet 5.5** (`claude-sonnet-5-5`) for features and te
 | H5 | Dry run with a throwaway group and 2–3 people, following the checklist in task L8 | Thu Nov 12 |
 | H6 | Launch: create the real group, add everyone, Match, Send | Fri Nov 13 |
 | H7 | Add `ANTHROPIC_API_KEY` to Vercel (needed by track G) | By Mon Nov 16 |
+| H8 | Supabase → Authentication → Sign In / Providers: turn off **Allow new users to sign up**; in URL Configuration, remove `http://localhost:3000/**` from the production redirect URLs ([SECURITY-REVIEW.md](SECURITY-REVIEW.md) H-1, L-4). The app creates accounts itself, so nothing else changes | Before H6 |
 
 ### Track L: launch (finish by Thu Nov 12)
 
@@ -426,6 +427,7 @@ Owner
 - [ ] H5 dry run
 - [ ] H6 launch
 - [ ] H7 Anthropic API key
+- [ ] H8 turn off public sign-up in Supabase (security review H-1)
 
 Launch
 - [x] L1 forgiving sign-in links (the Supabase template change was dropped: with one group, `/home` already lands on the right page)
@@ -433,9 +435,9 @@ Launch
 - [x] L3 close the open door (code done; needs the same migration and `ORGANIZER_EMAILS` in Vercel)
 - [x] L4 email-change notice
 - [ ] L5 end-to-end test
-- [ ] L6 security review
-- [ ] L7 migration path
-- [ ] L8 seed, dry-run checklist, docs
+- [x] L6 security review ([`SECURITY-REVIEW.md`](SECURITY-REVIEW.md): 1 high, a Supabase setting, now owner task H8; 3 medium and 6 low, with proposed fixes; no code changes)
+- [x] L7 migration path
+- [x] L8 seed, dry-run checklist, docs
 
 Gift ideas
 - [ ] G1 · [ ] G2 · [ ] G3 · [ ] G4 · [ ] G5
