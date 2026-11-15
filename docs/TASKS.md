@@ -438,7 +438,8 @@ Launch
 - [ ] L8 seed, dry-run checklist, docs
 
 Gift ideas
-- [ ] G1 · [ ] G2 · [ ] G3 · [ ] G4 · [ ] G5
+- [x] G1 · [x] G2 · [ ] G3 · [ ] G4 · [ ] G5
+  (G1/G2 design in [`GIFT-IDEAS.md`](GIFT-IDEAS.md); migration `20261115000000_gift_suggestions.sql` must be applied to production before G3 ships)
 
 After launch
 - [ ] P1 · [ ] P2 · [ ] P3 · [ ] P4 · [ ] P5 · [ ] P6 · [ ] P7 · [ ] P8 · [ ] P9
