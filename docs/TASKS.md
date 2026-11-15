@@ -440,8 +440,8 @@ Launch
 - [x] L8 seed, dry-run checklist, docs
 
 Gift ideas
-- [x] G1 · [x] G2 · [ ] G3 · [ ] G4 · [ ] G5
-  (G1/G2 design in [`GIFT-IDEAS.md`](GIFT-IDEAS.md); migration `20261115000000_gift_suggestions.sql` applied to production on Nov 15, recorded there as version `20261115200853`)
+- [x] G1 · [x] G2 · [x] G3 · [x] G4 · [ ] G5
+  (G1/G2 design in [`GIFT-IDEAS.md`](GIFT-IDEAS.md); migration `20261115000000_gift_suggestions.sql` applied to production on Nov 15, recorded there as version `20261115200853`; G3 adds `20261116100000_gift_generation_log.sql`, to be applied before deploy, and needs `ANTHROPIC_API_KEY` in Vercel: without it the panel keeps "Gift ideas are on their way")
 
 After launch
 - [ ] P1 · [ ] P2 · [ ] P3 · [ ] P4 · [ ] P5 · [ ] P6 · [ ] P7 · [x] P8 · [ ] P9

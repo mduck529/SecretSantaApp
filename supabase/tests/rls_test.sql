@@ -216,4 +216,13 @@ select tests.login('org');
 select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'after reveal the organizer still cannot read gift ideas');
 reset role;
 
+-- Gift generation log: server only, and it holds no member data.
+set role authenticated;
+select tests.login('org');
+select tests.fails($$select count(*) from public.gift_generation_log$$, 'the organizer cannot read the gift generation log');
+select tests.fails($$insert into public.gift_generation_log (ok) values (true)$$, 'clients cannot write the gift generation log');
+reset role;
+select tests.eq((select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'gift_generation_log'
+  and column_name not in ('id', 'created_at', 'ok')), 0::bigint, 'the gift generation log has no columns that could identify anyone');
+
 \echo 'ALL RLS TESTS PASSED'

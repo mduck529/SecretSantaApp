@@ -65,17 +65,18 @@ export function matchEmail(i: MatchEmailInput): OutgoingEmail {
   };
 }
 
-export function profileUpdatedEmail(i: { to: string; name: string; giftee: string; link: string }): OutgoingEmail {
+export function profileUpdatedEmail(i: { to: string; name: string; giftee: string; link: string; newIdeas?: boolean }): OutgoingEmail {
+  const ideas = i.newIdeas ? " New gift ideas are ready too." : "";
   return {
     to: i.to,
     subject: `${i.giftee} updated their Secret Santa questionnaire`,
     html: layout({
       preheader: `See what ${i.giftee} would love.`,
       heading: `${escape(i.giftee)} shared some gift hints`,
-      paragraphs: [`Hi ${escape(i.name)}, ${escape(i.giftee)} just updated their questionnaire. Take a look at what they'd love (and what to avoid).`],
+      paragraphs: [`Hi ${escape(i.name)}, ${escape(i.giftee)} just updated their questionnaire. Take a look at what they'd love (and what to avoid).${ideas}`],
       button: { label: `See ${i.giftee}'s answers`, url: i.link },
     }),
-    text: `Hi ${i.name}, ${i.giftee} just updated their questionnaire.\n\nSee their answers: ${i.link}\n\nShh, keep it a secret.`,
+    text: `Hi ${i.name}, ${i.giftee} just updated their questionnaire.${ideas}\n\nSee their answers: ${i.link}\n\nShh, keep it a secret.`,
   };
 }
 
