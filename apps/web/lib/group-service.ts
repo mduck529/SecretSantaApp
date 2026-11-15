@@ -790,6 +790,7 @@ export async function deliverProfileUpdates(): Promise<number> {
     const notified = Date.parse(r.notified_at as string);
     return Date.parse(r.last_edit_at as string) > notified && now - notified >= PROFILE_NOTIFY_THROTTLE_MS;
   });
+  console.info(`deliverProfileUpdates: ${rows.length} queued, ${due.length} due`);
   if (!due.length) return 0;
 
   const gifteeIds = due.map((r) => r.membership_id as string);
@@ -799,6 +800,7 @@ export async function deliverProfileUpdates(): Promise<number> {
     .in("receiver_id", gifteeIds)
     .eq("groups.status", "sent");
   if (pairsError) throw pairsError;
+  console.info(`deliverProfileUpdates: ${pairs.length} Santa(s) to tell`);
   if (!pairs.length) return 0;
 
   const memberIds = [...new Set(pairs.flatMap((p) => [p.giver_id as string, p.receiver_id as string]))];

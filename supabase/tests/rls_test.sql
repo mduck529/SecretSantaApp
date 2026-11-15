@@ -117,6 +117,12 @@ insert into public.questionnaire_answers (membership_id, answers, is_complete)
 select tests.fails($$insert into public.questionnaire_answers (membership_id, answers)
   select id, '{}' from public.memberships where email = 'alice@example.com'$$, 'bob cannot write alice''s answers');
 select tests.eq((select count(*) from public.questionnaire_answers), 1::bigint, 'bob reads his own answers');
+-- Saving again is a plain UPDATE of answers and is_complete (what the app does). An upsert
+-- would also set membership_id, which members have no privilege to change.
+update public.questionnaire_answers set answers = '{"hobbies": "fishing", "loves": "coffee"}', is_complete = true
+  where membership_id = (select id from public.memberships where email = 'bob@example.com');
+select tests.eq((select answers->>'loves' from public.questionnaire_answers), 'coffee', 'bob can update his own answers');
+select tests.fails($$update public.questionnaire_answers set membership_id = membership_id$$, 'bob cannot update membership_id');
 
 select tests.login('carol');
 select tests.eq((select answers->>'hobbies' from public.questionnaire_answers), 'fishing', 'carol (bob''s Santa) reads bob''s answers');
