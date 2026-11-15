@@ -5,6 +5,23 @@ const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 const ORGANIZER_EMAIL = (process.env.E2E_ORGANIZER_EMAIL ?? "organizer@example.com").toLowerCase();
 
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+
+/**
+ * Sending the matches marks every giftee as "just notified", and the app emails a Santa about a
+ * giftee's questionnaire at most once per 30 minutes (the rest waits for the daily sweep). So
+ * that the update email can be tested without waiting, pretend the match emails went out an hour
+ * ago. Test setup only: this touches the notification timestamps and nothing about who has whom.
+ */
+async function pretendMatchEmailsWentOutAnHourAgo(): Promise<void> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profile_notifications?notified_at=not.is.null`, {
+    method: "PATCH",
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ notified_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() }),
+  });
+  expect(res.ok, `backdating notifications returned ${res.status}`).toBe(true);
+}
+
 // A fresh set of addresses per run, so earlier runs' emails in the same inbox never count.
 const RUN = Date.now().toString(36);
 const people = ["Ann", "Ben", "Cara", "Dan", "Eve"].map((name) => ({ name, email: `${name.toLowerCase()}-${RUN}@example.com` }));
@@ -111,6 +128,7 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
   expect(benGiftee).not.toBe("Ben");
 
   // --- Saves the questionnaire; their Santa is told ---------------------------------------------
+  await pretendMatchEmailsWentOutAnHourAgo();
   await benPage.getByLabel(/Hobbies and interests/).fill("Fishing and woodworking");
   await benPage.getByLabel(/Things you love/).fill("Dark roast coffee");
   await benPage.getByLabel(/Please no/).fill("Socks");
