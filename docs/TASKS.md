@@ -439,7 +439,7 @@ Launch
 
 Gift ideas
 - [x] G1 · [x] G2 · [ ] G3 · [ ] G4 · [ ] G5
-  (G1/G2 design in [`GIFT-IDEAS.md`](GIFT-IDEAS.md); migration `20261115000000_gift_suggestions.sql` must be applied to production before G3 ships)
+  (G1/G2 design in [`GIFT-IDEAS.md`](GIFT-IDEAS.md); migration `20261115000000_gift_suggestions.sql` applied to production on Nov 15, recorded there as version `20261115200853`)
 
 After launch
 - [ ] P1 · [ ] P2 · [ ] P3 · [ ] P4 · [ ] P5 · [ ] P6 · [ ] P7 · [ ] P8 · [ ] P9
