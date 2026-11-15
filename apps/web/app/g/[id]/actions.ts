@@ -16,10 +16,19 @@ export async function saveQuestionnaire(_prev: ActionState, formData: FormData):
   const answers = cleanAnswers(raw);
   const complete = isComplete(answers);
 
-  // Row Level Security only lets people write their own answers.
-  const { error } = await supabase
-    .from("questionnaire_answers")
-    .upsert({ membership_id: membership.id, answers, is_complete: complete });
+  // Row Level Security only lets people write their own answers. Members may update only
+  // answers and is_complete, so this is an UPDATE with an INSERT fallback, not an upsert
+  // (an upsert also sets membership_id, which Postgres refuses).
+  const row = { answers, is_complete: complete };
+  const update = () =>
+    supabase.from("questionnaire_answers").update(row).eq("membership_id", membership.id).select("membership_id");
+  const first = await update();
+  let error = first.error;
+  if (!error && !first.data?.length) {
+    ({ error } = await supabase.from("questionnaire_answers").insert({ membership_id: membership.id, ...row }));
+    // Two saves at once (two tabs): the other one inserted first, so update theirs instead.
+    if (error?.code === "23505") ({ error } = await update());
+  }
   if (error) {
     console.error("saveQuestionnaire", error);
     return { ok: false, message: "Couldn't save. Please try again." };
