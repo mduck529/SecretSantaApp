@@ -444,7 +444,7 @@ Gift ideas
   (G1/G2 design in [`GIFT-IDEAS.md`](GIFT-IDEAS.md); migration `20261115000000_gift_suggestions.sql` applied to production on Nov 15, recorded there as version `20261115200853`)
 
 After launch
-- [ ] P1 · [ ] P2 · [ ] P3 · [ ] P4 · [ ] P5 · [ ] P6 · [ ] P7 · [x] P8 · [ ] P9
+- [x] P1 (Opus reviewed; migration `20261115210000_reveal_guard.sql` must be applied to production) · [ ] P2 · [ ] P3 · [ ] P4 · [ ] P5 · [ ] P6 · [ ] P7 · [x] P8 · [ ] P9
 
 ### If time runs short before Friday
 

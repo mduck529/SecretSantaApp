@@ -14,7 +14,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
 
   const { data: group } = await supabase
     .from("groups")
-    .select("name, status, budget_min_cents, budget_max_cents, exchange_date")
+    .select("name, status, budget_min_cents, budget_max_cents, exchange_date, revealed_at")
     .eq("id", groupId)
     .single();
   if (!group) return null;
@@ -40,6 +40,19 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
       ]);
       giftee = { name: person?.display_name ?? "your giftee", answers: (theirs?.answers as Answers) ?? null };
     }
+  }
+
+  // After the organizer reveals, Row Level Security lets every member read all matches.
+  let pairs: { id: string; giver: string; receiver: string }[] = [];
+  if (group.revealed_at) {
+    const [{ data: all }, { data: people }] = await Promise.all([
+      supabase.from("assignments").select("giver_id, receiver_id").eq("group_id", groupId),
+      supabase.from("memberships").select("id, display_name").eq("group_id", groupId),
+    ]);
+    const nameOf = new Map((people ?? []).map((p) => [p.id as string, p.display_name as string]));
+    pairs = (all ?? [])
+      .map((a) => ({ id: a.giver_id as string, giver: nameOf.get(a.giver_id) ?? "Someone", receiver: nameOf.get(a.receiver_id) ?? "someone" }))
+      .sort((a, b) => a.giver.localeCompare(b.giver));
   }
 
   const budget = groupBudget(group);
@@ -96,6 +109,19 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           </>
         )}
       </section>
+
+      {group.revealed_at ? (
+        <section id="reveal" className="card">
+          <h2>Who had whom 🎁</h2>
+          <ul className="people">
+            {pairs.map((p) => (
+              <li key={p.id}>
+                <strong>{p.giver}</strong> had {p.receiver}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section id="questionnaire" className="card">
         <h2>Your questionnaire</h2>
