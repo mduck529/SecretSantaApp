@@ -22,8 +22,9 @@ export async function saveQuestionnaire(_prev: ActionState, formData: FormData):
   const row = { answers, is_complete: complete };
   const update = () =>
     supabase.from("questionnaire_answers").update(row).eq("membership_id", membership.id).select("membership_id");
-  let { data: updated, error } = await update();
-  if (!error && !updated?.length) {
+  const first = await update();
+  let error = first.error;
+  if (!error && !first.data?.length) {
     ({ error } = await supabase.from("questionnaire_answers").insert({ membership_id: membership.id, ...row }));
     // Two saves at once (two tabs): the other one inserted first, so update theirs instead.
     if (error?.code === "23505") ({ error } = await update());

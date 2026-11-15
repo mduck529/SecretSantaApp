@@ -25,7 +25,7 @@ async function pretendMatchEmailsWentOutAnHourAgo(): Promise<void> {
 // A fresh set of addresses per run, so earlier runs' emails in the same inbox never count.
 const RUN = Date.now().toString(36);
 const people = ["Ann", "Ben", "Cara", "Dan", "Eve"].map((name) => ({ name, email: `${name.toLowerCase()}-${RUN}@example.com` }));
-const [ann, ben, cara] = people as [(typeof people)[0], (typeof people)[0], (typeof people)[0]];
+const [, ben, cara] = people as [(typeof people)[0], (typeof people)[0], (typeof people)[0]];
 const everyone = [ORGANIZER_EMAIL, ...people.map((p) => p.email)];
 
 /** The Supabase access token in the browser's session cookie (the cookie may be split in chunks). */
