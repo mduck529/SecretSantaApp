@@ -432,7 +432,7 @@ Launch
 - [x] L2 organizer edge cases (code done; migration `20261111000000_launch_hardening.sql` must be applied to production before this code is deployed)
 - [x] L3 close the open door (code done; needs the same migration and `ORGANIZER_EMAILS` in Vercel)
 - [x] L4 email-change notice
-- [ ] L5 end-to-end test
+- [x] L5 end-to-end test (spec and CI job written; first run is the `e2e` CI job, since Docker is unavailable in the Claude sandbox)
 - [ ] L6 security review
 - [ ] L7 migration path
 - [ ] L8 seed, dry-run checklist, docs
