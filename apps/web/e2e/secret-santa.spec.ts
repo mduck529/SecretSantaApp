@@ -14,10 +14,12 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
  * ago. Test setup only: this touches the notification timestamps and nothing about who has whom.
  */
 async function pretendMatchEmailsWentOutAnHourAgo(): Promise<void> {
+  const anHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const res = await fetch(`${SUPABASE_URL}/rest/v1/profile_notifications?notified_at=not.is.null`, {
     method: "PATCH",
     headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ notified_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() }),
+    // last_edit_at too: otherwise every row looks "edited since the last email" and all Santas are told.
+    body: JSON.stringify({ notified_at: anHourAgo, last_edit_at: anHourAgo }),
   });
   expect(res.ok, `backdating notifications returned ${res.status}`).toBe(true);
 }
@@ -56,14 +58,17 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
   const phone = { ...devices["Pixel 7"], baseURL: origin };
 
   // Everything the organizer's browser receives for the organizer page and its server actions.
-  const organizerBodies: string[] = [];
+  const captured: { method: string; path: string; status: number; body: string | null; error?: string }[] = [];
   let adminPath = "";
   page.on("response", async (response) => {
-    if (!adminPath || !new URL(response.url()).pathname.startsWith(adminPath)) return;
+    const url = new URL(response.url());
+    if (!adminPath || !url.pathname.startsWith(adminPath)) return;
+    const entry: (typeof captured)[number] = { method: response.request().method(), path: url.pathname, status: response.status(), body: null };
+    captured.push(entry);
     try {
-      organizerBodies.push(await response.text());
-    } catch {
-      // Redirects and similar have no body to read.
+      entry.body = await response.text();
+    } catch (err) {
+      entry.error = String(err); // e.g. redirects have no body to read
     }
   });
 
@@ -138,6 +143,8 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
   const updatedSubject = /Ben updated their Secret Santa questionnaire/;
   await waitForMail(everyone, updatedSubject);
   expect(await findMail(everyone, updatedSubject)).toHaveLength(1);
+  // Nobody else's questionnaire changed, so nobody else's Santa is emailed.
+  expect(await findMail(everyone, /updated their Secret Santa questionnaire/)).toHaveLength(1);
 
   // --- Organizer resends one email -------------------------------------------------------------
   const caraBefore = (await findMail([cara.email], matchSubject)).length;
@@ -170,8 +177,13 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
 
   // --- Privacy: nothing the organizer's browser received names a pairing -----------------------
   await page.waitForLoadState("networkidle");
-  expect(organizerBodies.length, "captured organizer page responses").toBeGreaterThan(5);
-  for (const body of organizerBodies) {
+  const summary = captured.map((c) => `${c.method} ${c.status} ${c.body === null ? `no body (${c.error})` : `${c.body.length} bytes`}`).join("; ");
+  const bodies = captured.flatMap((c) => (c.body === null ? [] : [c.body]));
+  const posts = captured.filter((c) => c.method === "POST" && c.body !== null);
+  // Every organizer action (5 adds, a rule, Match, Send, Resend, Remove) must have been captured,
+  // or the checks below would pass for the wrong reason.
+  expect(posts.length, `captured organizer server-action responses: ${summary}`).toBeGreaterThanOrEqual(10);
+  for (const body of bodies) {
     expect(body).not.toMatch(/giver_id|receiver_id|assignments/i);
     expect(body).not.toMatch(/You.{1,8}re buying for|'s Secret Santa|&#x27;s Secret Santa/i);
   }
