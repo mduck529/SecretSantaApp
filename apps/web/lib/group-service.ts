@@ -13,6 +13,7 @@ import {
 import { createAdminClient } from "./supabase/admin";
 import { signInLink } from "./links";
 import { sendEmails, type OutgoingEmail } from "./email/send";
+import { checkReveal } from "./reveal";
 import { emailChangedNotice, matchEmail, profileUpdatedEmail, reminderEmail } from "./email/templates";
 
 /**
@@ -36,6 +37,7 @@ interface Group {
   budget_min_cents: number;
   budget_max_cents: number;
   exchange_date: string | null;
+  revealed_at: string | null;
 }
 
 interface Member {
@@ -68,7 +70,7 @@ async function assertAdmin(db: Db, groupId: string, actorUserId: string) {
 async function loadGroup(db: Db, groupId: string): Promise<Group> {
   const { data, error } = await db
     .from("groups")
-    .select("id, name, status, budget_min_cents, budget_max_cents, exchange_date")
+    .select("id, name, status, budget_min_cents, budget_max_cents, exchange_date, revealed_at")
     .eq("id", groupId)
     .single();
   if (error) throw error;
@@ -201,6 +203,7 @@ export async function addMember(
     const email = normalizeEmail(input.email);
     const phone = normalizePhone(input.phone);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so the roster can't change." };
 
     const { data: inserted, error } = await db
       .from("memberships")
@@ -302,6 +305,7 @@ export async function removeMember(groupId: string, actorUserId: string, memberI
   try {
     await assertAdmin(db, groupId, actorUserId);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so the roster can't change." };
     const { data: member } = await db
       .from("memberships")
       .select("display_name, role")
@@ -415,6 +419,35 @@ export async function updateSettings(
   }
 }
 
+/**
+ * The Reveal button. Opens only on/after the exchange date, once matches were sent.
+ * Setting revealed_at lets every member read all matches through Row Level Security.
+ * Returns a plain message only.
+ */
+export async function revealMatches(groupId: string, actorUserId: string): Promise<Outcome> {
+  const db = createAdminClient();
+  try {
+    await assertAdmin(db, groupId, actorUserId);
+    const group = await loadGroup(db, groupId);
+    const check = checkReveal(group);
+    if (!check.ok) return { ok: false, message: check.message };
+    // Claim atomically so two clicks record one reveal.
+    const { data: claimed, error } = await db
+      .from("groups")
+      .update({ revealed_at: new Date().toISOString() })
+      .eq("id", groupId)
+      .eq("status", "sent")
+      .is("revealed_at", null)
+      .select("id");
+    if (error) throw error;
+    if (!claimed?.length) return { ok: false, message: "Already revealed. Everyone can see who had whom." };
+    await audit(db, groupId, actorUserId, "revealed");
+    return { ok: true, message: "Revealed 🎁 Everyone can now see who had whom on their page." };
+  } catch (err) {
+    return asOutcome(err);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Match and Send
 // ---------------------------------------------------------------------------
@@ -449,6 +482,7 @@ export async function matchGroup(
   try {
     await assertAdmin(db, groupId, actorUserId);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so they can't be changed." };
     if (group.status === "sent" && !confirmedAfterSend) {
       return { ok: false, message: "Matches were already sent. Confirm to re-match; then press Send so everyone gets their new match." };
     }

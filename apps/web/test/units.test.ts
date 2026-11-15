@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { explainProblem, formatExchangeDate, groupBudget, normalizeEmail, normalizePhone } from "@/lib/group-service";
 import { emailChangedNotice, maskEmail, matchEmail, profileUpdatedEmail, reminderEmail } from "@/lib/email/templates";
+import { checkReveal, todayInEastern } from "@/lib/reveal";
 import { canCreateGroups, deadLinkOutcome, safeNext } from "@/lib/auth";
 
 describe("normalizePhone", () => {
@@ -132,4 +133,19 @@ describe("canCreateGroups", () => {
     expect(canCreateGroups("me@example.com", "", true)).toBe(false);
     expect(canCreateGroups("me@example.com", undefined, false)).toBe(true);
   });
+});
+
+describe("checkReveal", () => {
+  const sent = { status: "sent", exchange_date: "2026-12-25", revealed_at: null };
+  it("opens on the exchange date and after", () => {
+    expect(checkReveal(sent, "2026-12-25").ok).toBe(true);
+    expect(checkReveal(sent, "2026-12-30").ok).toBe(true);
+  });
+  it("stays closed before the date", () => expect(checkReveal(sent, "2026-12-24").ok).toBe(false));
+  it("needs sent matches and a date", () => {
+    expect(checkReveal({ ...sent, status: "matched" }, "2027-01-01").ok).toBe(false);
+    expect(checkReveal({ ...sent, exchange_date: null }, "2027-01-01").ok).toBe(false);
+  });
+  it("refuses a second reveal", () => expect(checkReveal({ ...sent, revealed_at: "2026-12-25T10:00:00Z" }, "2026-12-26").ok).toBe(false));
+  it("reads today as a calendar date", () => expect(todayInEastern(new Date("2026-12-25T03:00:00Z"))).toBe("2026-12-24"));
 });

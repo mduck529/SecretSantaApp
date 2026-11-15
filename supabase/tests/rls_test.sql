@@ -172,7 +172,13 @@ select tests.eq((select user_id from public.memberships where email = 'carol.new
   'email change detaches the old login');
 reset role;
 
--- After the exchange the organizer turns on reveal; then everyone sees all matches.
+-- Reveal is server-only: a signed-in organizer cannot set it from the client.
+set role authenticated;
+select tests.login('alice');
+select tests.fails($$update public.groups set revealed_at = now()$$, 'organizer cannot reveal from the client');
+reset role;
+
+-- After the exchange the server turns on reveal; then everyone sees all matches.
 update public.groups set revealed_at = now();
 set role authenticated;
 select tests.login('alice');
