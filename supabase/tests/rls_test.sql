@@ -137,6 +137,56 @@ select tests.eq((select count(*) from public.questionnaire_answers), 0::bigint, 
 select tests.eq((select phone from public.member_contacts), '+15555550123', 'alice sees her own phone number');
 select tests.eq((select count(*) from public.assignments), 1::bigint, 'alice sees exactly one match');
 
+-- Security review M-2: the roster's email bookkeeping would show whose match changed after an
+-- add or remove, so members (organizer included) read only the columns the app needs.
+reset role;
+update public.memberships set match_email_status = 'sent', match_email_sent_at = now(), match_email_retry = true
+  where email = 'carol@example.com';
+set role authenticated;
+select tests.login('alice');
+select tests.fails($$select match_email_sent_at from public.memberships$$, 'members cannot read match_email_sent_at');
+select tests.fails($$select match_email_retry from public.memberships$$, 'members cannot read match_email_retry');
+select tests.fails($$select questionnaire_updated_at from public.memberships$$, 'members cannot read questionnaire_updated_at');
+select tests.fails($$select last_reminded_at from public.memberships$$, 'members cannot read last_reminded_at');
+select tests.fails($$select * from public.memberships$$, 'members cannot select every roster column');
+select tests.fails($$select count(*) from public.memberships where match_email_sent_at is not null$$,
+  'members cannot filter on match_email_sent_at');
+select tests.fails($$select count(*) from public.memberships order by max(match_email_sent_at)$$,
+  'members cannot sort on match_email_sent_at');
+select tests.fails($$select count(*) from public.memberships where match_email_retry$$,
+  'members cannot filter on match_email_retry');
+select tests.fails($$select to_jsonb(m) from public.memberships m$$, 'members cannot read a whole roster row as json');
+-- What the app reads with a member's session still works.
+select tests.eq((select display_name from public.memberships where email = 'alice@example.com' and user_id = auth.uid()),
+  'Alice', 'requireMember columns readable');
+select tests.eq((select role from public.memberships where group_id = :'gid' and user_id = auth.uid()),
+  'member', 'requireMember filters readable');
+select tests.eq((select display_name from public.memberships where id = (select receiver_id from public.assignments)),
+  'Carol', 'person page reads their giftee''s name');
+select tests.eq((select phone from public.member_contacts), '+15555550123', 'contacts policy still reads the roster');
+select tests.login('org');
+select tests.fails($$select match_email_sent_at from public.memberships$$, 'organizer cannot read match_email_sent_at');
+select tests.fails($$select match_email_retry from public.memberships$$, 'organizer cannot read match_email_retry');
+select tests.eq((select count(*) from (
+    select id, display_name, email, role, user_id, questionnaire_complete, match_email_status
+    from public.memberships where group_id = :'gid' order by created_at) dashboard), 4::bigint,
+  'organizer dashboard columns readable');
+select tests.eq((select match_email_status from public.memberships where email = 'carol@example.com'), 'sent',
+  'organizer still sees the visible email status');
+reset role;
+select tests.eq((select match_email_retry from public.memberships where email = 'alice@example.com'), false,
+  'match_email_retry defaults to false');
+select tests.eq((select count(*) from information_schema.column_privileges
+    where table_schema = 'public' and table_name = 'memberships' and grantee = 'anon'), 0::bigint,
+  'anon has no roster columns');
+select tests.eq((select string_agg(column_name, ',' order by column_name) from information_schema.column_privileges
+    where table_schema = 'public' and table_name = 'memberships' and grantee = 'authenticated' and privilege_type = 'SELECT'),
+  'created_at,display_name,email,group_id,id,match_email_status,questionnaire_complete,role,user_id',
+  'authenticated reads exactly the listed roster columns');
+update public.memberships set match_email_status = 'not_sent', match_email_sent_at = null, match_email_retry = false
+  where email = 'carol@example.com';
+set role authenticated;
+
 select tests.login('outsider');
 select tests.eq((select count(*) from public.groups), 0::bigint, 'outsider sees no groups');
 select tests.eq((select count(*) from public.memberships), 0::bigint, 'outsider sees no roster');

@@ -240,10 +240,12 @@ export async function addMember(
           message: `Couldn't fit ${name} in without changing everyone's match. To include them, press Re-match, add them, then Send again.`,
         };
       }
-      const sent = await emailMatches(db, group, result.changedGivers, { changedIds: result.changedGivers.filter((g) => g !== memberId) });
+      // Whose match changed is secret: their delivery result must stay match-blind (security review M-3).
+      const others = result.changedGivers.filter((g) => g !== memberId);
+      const sent = await emailMatches(db, group, result.changedGivers, { changedIds: others, blindIds: others });
       return {
         ok: true,
-        message: `Added ${name} and sent them their match. One other person's match changed and they've been emailed.${sent.failedNote}`,
+        message: addedAfterSendMessage(name, { newcomerFailed: sent.failed.length > 0, othersFailed: sent.blindFailed }),
       };
     }
     return { ok: true, message: `Added ${name}.` };
@@ -329,11 +331,13 @@ export async function removeMember(groupId: string, actorUserId: string, memberI
         };
       }
       await saveAssignments(db, groupId, result.assignments, "member_removed", actorUserId, memberId);
-      const sent = await emailMatches(db, group, result.changedGivers, { changedIds: result.changedGivers });
-      const n = result.changedGivers.length;
+      const sent = await emailMatches(db, group, result.changedGivers, {
+        changedIds: result.changedGivers,
+        blindIds: result.changedGivers,
+      });
       return {
         ok: true,
-        message: `Removed ${member.display_name}. ${n === 1 ? "One person" : `${n} people`} got a new match by email.${sent.failedNote}`,
+        message: removedAfterSendMessage(member.display_name as string, result.changedGivers.length, sent.blindFailed),
       };
     }
 
@@ -476,16 +480,68 @@ export async function matchGroup(
   }
 }
 
+/** What to write to `memberships` after a batch of match emails. See {@link planDeliveryUpdates}. */
+export interface DeliveryPlan {
+  /** Organizer can see these: status "sent", sent_at now, retry cleared. */
+  sent: string[];
+  /** Organizer can see these: status "failed", retry cleared (the organizer fixes and resends). */
+  failed: string[];
+  /** Match-blind: sent_at now and retry cleared, but the visible status is left exactly as it was. */
+  blindSent: string[];
+  /** Match-blind: only the server-only retry flag is set; the daily cron tries again. */
+  blindFailed: string[];
+}
+
 /**
- * Emails each listed giver their match. Reads pairings internally; returns only counts.
+ * Splits delivery results into database updates. A "blind" person is one whose match just changed
+ * because someone else was added or removed. Anything the organizer (or any member) can read about
+ * them, such as the "Email failed" badge or a status flipping from failed to sent, would show who
+ * is the newcomer's Santa or who was buying for the person removed. So for blind people only
+ * server-only columns change (security review M-2, M-3).
+ */
+export function planDeliveryUpdates(ids: readonly string[], delivered: readonly boolean[], blindIds: readonly string[] = []): DeliveryPlan {
+  const blind = new Set(blindIds);
+  const plan: DeliveryPlan = { sent: [], failed: [], blindSent: [], blindFailed: [] };
+  ids.forEach((id, i) => {
+    const ok = delivered[i] === true;
+    if (blind.has(id)) (ok ? plan.blindSent : plan.blindFailed).push(id);
+    else (ok ? plan.sent : plan.failed).push(id);
+  });
+  return plan;
+}
+
+/** Result message for adding someone after Send. Names only the newcomer, never whose match changed. */
+export function addedAfterSendMessage(name: string, { newcomerFailed, othersFailed }: { newcomerFailed: boolean; othersFailed: number }): string {
+  const first = newcomerFailed
+    ? `Added ${name}, but we couldn't email them their match. Check their address and press "Resend match email".`
+    : `Added ${name} and sent them their match.`;
+  const second = othersFailed
+    ? " One other person's match changed. That email didn't go through, so we'll try again automatically."
+    : " One other person's match changed and they've been emailed.";
+  return first + second;
+}
+
+/** Result message for removing someone after Send. Counts only, never names. */
+export function removedAfterSendMessage(name: string, changed: number, failed: number): string {
+  const who = changed === 1 ? "One person" : `${changed} people`;
+  if (!failed) return `Removed ${name}. ${who} got a new match by email.`;
+  const emails = failed === 1 ? "One email" : `${failed} emails`;
+  return `Removed ${name}. ${who} got a new match. ${emails} didn't go through, so we'll try again automatically.`;
+}
+
+/**
+ * Emails each listed giver their match. Reads pairings internally; returns only counts, plus the
+ * names of failed people the organizer may know about.
  * `changedIds` get the "your match has changed" wording.
+ * `blindIds` are people whose match changed because of someone else's add or remove: their
+ * failures are only counted (`blindFailed`) and retried by the daily cron, never named or badged.
  */
 async function emailMatches(
   db: Db,
   group: Group,
   giverIds: readonly string[],
-  { changedIds = [] }: { changedIds?: readonly string[] } = {},
-): Promise<{ sent: number; failed: string[]; failedNote: string }> {
+  { changedIds = [], blindIds = [] }: { changedIds?: readonly string[]; blindIds?: readonly string[] } = {},
+): Promise<{ sent: number; failed: string[]; blindFailed: number; failedNote: string }> {
   const members = await loadMembers(db, group.id);
   const byId = new Map(members.map((m) => [m.id, m]));
   const receiverOf = new Map((await loadAssignments(db, group.id)).map((a) => [a.giver, a.receiver]));
@@ -493,8 +549,16 @@ async function emailMatches(
   const exchangeDate = formatExchangeDate(group.exchange_date);
 
   const targets = giverIds.map((id) => byId.get(id)).filter((m): m is Member => Boolean(m && receiverOf.has(m.id)));
-  const links = await Promise.all(targets.map((m) => signInLink(m.email, `/g/${group.id}`)));
-  const emails: OutgoingEmail[] = targets.map((m, i) => {
+  // A sign-in link that can't be made counts as a failed email for that person, not an error
+  // for the whole batch (which would skip the bookkeeping below, retries included).
+  const links = await Promise.allSettled(targets.map((m) => signInLink(m.email, `/g/${group.id}`)));
+  const linkFailures = links.filter((l) => l.status === "rejected").length;
+  if (linkFailures) console.error(`Couldn't make ${linkFailures} sign-in link(s) for match emails`);
+  const ready = targets.flatMap((m, i) => {
+    const link = links[i]!;
+    return link.status === "fulfilled" ? [{ m, link: link.value }] : [];
+  });
+  const emails: OutgoingEmail[] = ready.map(({ m, link }) => {
     const giftee = byId.get(receiverOf.get(m.id)!)!;
     return matchEmail({
       to: m.email,
@@ -504,31 +568,79 @@ async function emailMatches(
       budget,
       exchangeDate,
       gifteeHasAnswers: Boolean(giftee.questionnaire_updated_at),
-      link: links[i]!,
+      link,
       changed: changedIds.includes(m.id),
     });
   });
-  const results = await sendEmails(emails);
+  const sendResults = await sendEmails(emails);
+  const delivered = new Map(ready.map(({ m }, i) => [m.id, sendResults[i] === true]));
+  const plan = planDeliveryUpdates(
+    targets.map((m) => m.id),
+    targets.map((m) => delivered.get(m.id) === true),
+    blindIds,
+  );
+
   const now = new Date().toISOString();
-  const okIds = targets.filter((_, i) => results[i]).map((m) => m.id);
-  const failed = targets.filter((_, i) => !results[i]);
-  if (okIds.length) await db.from("memberships").update({ match_email_status: "sent", match_email_sent_at: now }).in("id", okIds);
-  if (failed.length) await db.from("memberships").update({ match_email_status: "failed" }).in("id", failed.map((m) => m.id));
+  // The emails are already out, so a bookkeeping error is logged (code only, no names) rather than
+  // thrown: throwing would make Send roll the group back to "matched" after people got their match.
+  const update = async (ids: string[], values: Record<string, unknown>) => {
+    if (!ids.length) return;
+    const { error } = await db.from("memberships").update(values).in("id", ids);
+    if (error) console.error("emailMatches status update failed", error.code);
+  };
+  await update(plan.sent, { match_email_status: "sent", match_email_sent_at: now, match_email_retry: false });
+  await update(plan.failed, { match_email_status: "failed", match_email_retry: false });
+  await update(plan.blindSent, { match_email_sent_at: now, match_email_retry: false });
+  await update(plan.blindFailed, { match_email_retry: true });
 
   // Santas just got a fresh look at their giftee, so earlier edits don't need a separate email.
-  const receivers = okIds.map((id) => receiverOf.get(id)!);
+  const receivers = [...plan.sent, ...plan.blindSent].map((id) => receiverOf.get(id)!);
   if (receivers.length) {
     await db
       .from("profile_notifications")
       .upsert(receivers.map((id) => ({ membership_id: id, last_edit_at: now, notified_at: now })));
   }
 
-  const failedNames = failed.map((m) => m.display_name);
+  const failedNames = plan.failed.map((id) => byId.get(id)!.display_name);
   return {
-    sent: okIds.length,
+    sent: plan.sent.length + plan.blindSent.length,
     failed: failedNames,
+    blindFailed: plan.blindFailed.length,
     failedNote: failedNames.length ? ` Couldn't email ${failedNames.join(", ")}; check their address and press Resend.` : "",
   };
+}
+
+/**
+ * Daily retry for "your match has changed" emails that failed after an add or remove.
+ * Match-blind like the first attempt: it updates only server-only columns, logs only a count,
+ * and stops once the person's group is no longer "sent" (a re-match and Send emails everyone).
+ */
+export async function retryChangedMatchEmails(): Promise<{ sent: number; failed: number }> {
+  const db = createAdminClient();
+  const { data, error } = await db
+    .from("memberships")
+    .select("id, group_id, groups!inner(status)")
+    .eq("match_email_retry", true)
+    .eq("groups.status", "sent");
+  if (error) throw error;
+  const byGroup = new Map<string, string[]>();
+  for (const row of data) byGroup.set(row.group_id as string, [...(byGroup.get(row.group_id as string) ?? []), row.id as string]);
+
+  let sent = 0;
+  let failed = 0;
+  for (const [groupId, ids] of byGroup) {
+    try {
+      const group = await loadGroup(db, groupId);
+      const result = await emailMatches(db, group, ids, { changedIds: ids, blindIds: ids });
+      sent += result.sent;
+      failed += result.blindFailed;
+      await audit(db, groupId, null, "match_email_retried", { sent: result.sent, failed: result.blindFailed });
+    } catch (err) {
+      failed += ids.length;
+      console.error("retryChangedMatchEmails", err instanceof Error && !("code" in err) ? err.message : err);
+    }
+  }
+  return { sent, failed };
 }
 
 /** The Send button: emails everyone their match. */
