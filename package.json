@@ -2,6 +2,9 @@
   "name": "secretsantaapp",
   "private": true,
   "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
