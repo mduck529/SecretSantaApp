@@ -37,6 +37,27 @@ secure form, or you'll enter it directly in the service's dashboard.
    token through the secure form (Account → Access Tokens). Or you can paste
    `supabase/migrations/*.sql` into **SQL Editor** yourself.
 
+## Migrations: getting database changes to production
+
+Only the owner (or Claude with the owner's approval) runs these. Pull requests list the
+migrations they add; nothing is applied automatically.
+
+**One-time setup** (production's schema was applied by hand, so its history is empty):
+
+1. Install the Supabase CLI, then `supabase login` and
+   `supabase link --project-ref YOUR_PROJECT_REF` (the ref is in the project's URL).
+2. Record the initial migration as already applied, without running it:
+   `supabase migration repair --status applied 20261107000000`
+3. Check: `scripts/migrate-status.sh` should show the initial file as `applied`.
+
+**Every time a pull request adds a migration:**
+
+1. `scripts/migrate-status.sh` shows what is `PENDING`.
+2. `supabase db push` applies the pending files, after showing the list and asking to confirm.
+3. Run it **before** deploying the code that needs it.
+
+Never edit a migration that is already applied; add a new timestamped file instead.
+
 ## 3. Gmail (email) — ~5 min
 
 All email (sign-in links, match emails, reminders) is sent from `secretsanta8@gmail.com`.
