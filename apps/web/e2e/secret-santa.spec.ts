@@ -86,7 +86,7 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
 
   // --- Match and Send --------------------------------------------------------------------------
   await page.getByRole("button", { name: "Match everyone" }).click();
-  await expect(page.getByText("6 people matched")).toBeVisible();
+  await expect(page.locator("strong", { hasText: "6 people matched" })).toBeVisible();
 
   page.once("dialog", (d) => void d.accept());
   await page.getByRole("button", { name: "Send to everyone" }).click();
