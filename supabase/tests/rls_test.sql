@@ -143,9 +143,42 @@ select tests.eq((select count(*) from public.memberships), 0::bigint, 'outsider 
 select tests.eq((select count(*) from public.assignments), 0::bigint, 'outsider sees no matches');
 reset role;
 
+-- Gift ideas: the server caches ideas for bob. Only bob's Santa (carol) may read them.
+insert into public.gift_suggestions
+  (receiver_id, ideas, answers_updated_at, budget_min_cents, budget_max_cents, model, prompt_version)
+  select m.id, '{"retail": [], "diy": []}', m.questionnaire_updated_at, 10000, 15000, 'test-model', 'test'
+  from public.memberships m where m.email = 'bob@example.com';
+select tests.fails($$insert into public.gift_suggestions (receiver_id, ideas, budget_min_cents, budget_max_cents, model, prompt_version)
+  select id, '[]', 0, 0, 'm', 'v' from public.memberships where email = 'alice@example.com'$$, 'gift ideas must be a JSON object');
+set role authenticated;
+select tests.login('carol');
+select tests.eq((select count(*) from public.gift_suggestions), 1::bigint, 'carol (bob''s Santa) reads bob''s gift ideas');
+select tests.fails($$insert into public.gift_suggestions (receiver_id, ideas, budget_min_cents, budget_max_cents, model, prompt_version)
+  select id, '{}', 0, 0, 'm', 'v' from public.memberships where email = 'alice@example.com'$$, 'members cannot write gift ideas');
+select tests.fails($$update public.gift_suggestions set model = 'x'$$, 'Santa cannot change gift ideas');
+select tests.fails($$delete from public.gift_suggestions$$, 'Santa cannot delete gift ideas');
+select tests.login('bob');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'bob cannot read his own gift ideas (they are a surprise)');
+select tests.login('org');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'organizer cannot read gift ideas');
+select tests.fails($$delete from public.gift_suggestions$$, 'organizer cannot delete gift ideas');
+select tests.login('alice');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'alice (not bob''s Santa) cannot read bob''s gift ideas');
+select tests.login('outsider');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'outsider cannot read gift ideas');
+reset role;
+select tests.eq(has_table_privilege('anon', 'public.gift_suggestions', 'select'), false,
+  'signed-out visitors cannot read gift ideas');
+select tests.eq(has_table_privilege('authenticated', 'public.gift_suggestions', 'insert, update, delete, truncate'), false,
+  'signed-in users have no write access to gift ideas');
+
 select tests.eq((select count(*) from public.profile_notifications), 1::bigint, 'bob''s edit queued one notification');
 select tests.eq(public.reset_unsent_match(:'gid'), true, 'unsent match can be cleared by the server');
 select tests.eq((select count(*) from public.assignments), 0::bigint, 'clearing removes matches');
+set role authenticated;
+select tests.login('carol');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'without a match, carol no longer sees bob''s gift ideas');
+reset role;
 update public.memberships set match_email_status = 'sent', match_email_sent_at = now();
 select public.save_assignments(:'gid', (
   select jsonb_agg(jsonb_build_object('giver', g.id, 'receiver', r.id))
@@ -177,6 +210,10 @@ update public.groups set revealed_at = now();
 set role authenticated;
 select tests.login('alice');
 select tests.eq((select count(*) from public.assignments), 4::bigint, 'after reveal everyone sees all matches');
+select tests.login('bob');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'after reveal bob still cannot read his gift ideas');
+select tests.login('org');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'after reveal the organizer still cannot read gift ideas');
 reset role;
 
 \echo 'ALL RLS TESTS PASSED'
