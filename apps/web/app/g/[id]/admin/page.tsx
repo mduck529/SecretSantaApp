@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ActionForm, SubmitButton } from "@/components/action-form";
 import { requireAdmin } from "@/lib/auth";
 import { formatExchangeDate, groupBudget } from "@/lib/group-service";
+import { checkReveal } from "@/lib/reveal";
 import {
   addPersonAction,
   addRuleAction,
@@ -10,6 +11,7 @@ import {
   removePersonAction,
   removeRuleAction,
   resendAction,
+  revealAction,
   sendAction,
   settingsAction,
   updatePersonAction,
@@ -31,7 +33,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   const [{ data: group }, { data: members }, { data: contacts }, { data: rules }] = await Promise.all([
     supabase
       .from("groups")
-      .select("name, status, budget_min_cents, budget_max_cents, exchange_date, sent_at")
+      .select("name, status, budget_min_cents, budget_max_cents, exchange_date, sent_at, revealed_at")
       .eq("id", groupId)
       .single(),
     supabase
@@ -47,6 +49,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   const phoneOf = new Map((contacts ?? []).map((c) => [c.membership_id as string, c.phone as string]));
   const nameOf = new Map(members.map((m) => [m.id as string, m.display_name as string]));
   const status = group.status as "draft" | "matched" | "sent";
+  const reveal = checkReveal({ status, exchange_date: group.exchange_date, revealed_at: group.revealed_at });
   const incomplete = members.filter((m) => !m.questionnaire_complete).length;
   const hidden = (name: string, value: string) => <input type="hidden" name={name} value={value} />;
   const gid = hidden("group_id", groupId);
@@ -284,6 +287,41 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
           </>
         )}
       </section>
+
+      {/* Reveal */}
+      {status === "sent" ? (
+        <section className="card">
+          <h2>4. Reveal</h2>
+          {group.revealed_at ? (
+            <p>
+              <strong>Revealed ✓</strong> Everyone can see who had whom on their page.
+            </p>
+          ) : (
+            <>
+              <p className="muted">
+                After the exchange, show everyone who had whom. This can&apos;t be undone, and matches can&apos;t be
+                changed afterwards.{" "}
+                {reveal.ok ? "" : reveal.message}
+              </p>
+              <ActionForm
+                action={revealAction}
+                confirm="Reveal who had whom to everyone in the group? This can't be undone."
+              >
+                {gid}
+                {reveal.ok ? (
+                  <SubmitButton className="primary" pendingText="Revealing…">
+                    Reveal who had whom
+                  </SubmitButton>
+                ) : (
+                  <button type="button" disabled>
+                    Reveal who had whom
+                  </button>
+                )}
+              </ActionForm>
+            </>
+          )}
+        </section>
+      ) : null}
 
       {/* Reminders */}
       <section className="card">

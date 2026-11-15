@@ -117,6 +117,12 @@ insert into public.questionnaire_answers (membership_id, answers, is_complete)
 select tests.fails($$insert into public.questionnaire_answers (membership_id, answers)
   select id, '{}' from public.memberships where email = 'alice@example.com'$$, 'bob cannot write alice''s answers');
 select tests.eq((select count(*) from public.questionnaire_answers), 1::bigint, 'bob reads his own answers');
+-- Saving again is a plain UPDATE of answers and is_complete (what the app does). An upsert
+-- would also set membership_id, which members have no privilege to change.
+update public.questionnaire_answers set answers = '{"hobbies": "fishing", "loves": "coffee"}', is_complete = true
+  where membership_id = (select id from public.memberships where email = 'bob@example.com');
+select tests.eq((select answers->>'loves' from public.questionnaire_answers), 'coffee', 'bob can update his own answers');
+select tests.fails($$update public.questionnaire_answers set membership_id = membership_id$$, 'bob cannot update membership_id');
 
 select tests.login('carol');
 select tests.eq((select answers->>'hobbies' from public.questionnaire_answers), 'fishing', 'carol (bob''s Santa) reads bob''s answers');
@@ -205,8 +211,35 @@ select tests.eq((select user_id from public.memberships where email = 'carol.new
   'email change detaches the old login');
 reset role;
 
--- After the exchange the organizer turns on reveal; then everyone sees all matches.
-update public.groups set revealed_at = now();
+-- Reveal is server-only and gated by the exchange date (group is "sent" from here).
+-- Put the date in the future first (as the server would).
+update public.groups set exchange_date = (now() at time zone 'America/New_York')::date + 7;
+set role authenticated;
+select tests.login('org');
+select tests.fails($$update public.groups set revealed_at = now()$$, 'organizer cannot reveal from the client');
+select tests.fails($$update public.groups set status = 'sent'$$, 'organizer cannot set status');
+select tests.fails($$update public.groups set exchange_date = (now() at time zone 'America/New_York')::date - 1$$,
+  'organizer cannot move the date into the past after Send');
+select tests.eq((select count(*) from public.assignments), 1::bigint, 'organizer sees exactly one match before reveal');
+reset role;
+select tests.fails(format($$update public.groups set revealed_at = now() where id = %L$$, :'gid'),
+  'trigger blocks reveal before the date, even for the server');
+select tests.eq(public.reveal_group(:'gid', (select user_id from public.memberships where email = 'org@example.com')),
+  'too_early', 'server cannot reveal before the date');
+select tests.fails(format($$select public.reveal_group(%L, (select user_id from public.memberships where email = 'alice@example.com'))$$, :'gid'),
+  'a non-organizer cannot reveal');
+select tests.eq((select count(*) from public.audit_log where action = 'revealed'), 0::bigint, 'no reveal audit yet');
+
+-- On the exchange day the server reveals once, with an audit row; then everyone sees all matches.
+-- (Simulate time passing: skip the guard trigger for this setup step only.)
+set session_replication_role = replica;
+update public.groups set exchange_date = (now() at time zone 'America/New_York')::date;
+set session_replication_role = origin;
+select tests.eq(public.reveal_group(:'gid', (select user_id from public.memberships where email = 'org@example.com')),
+  'ok', 'server reveals on the exchange date');
+select tests.eq(public.reveal_group(:'gid', (select user_id from public.memberships where email = 'org@example.com')),
+  'already', 'second reveal does nothing');
+select tests.eq((select count(*) from public.audit_log where action = 'revealed'), 1::bigint, 'reveal is audited once');
 set role authenticated;
 select tests.login('alice');
 select tests.eq((select count(*) from public.assignments), 4::bigint, 'after reveal everyone sees all matches');

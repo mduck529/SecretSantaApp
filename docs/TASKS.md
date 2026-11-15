@@ -434,7 +434,7 @@ Launch
 - [x] L2 organizer edge cases (code done; migration `20261111000000_launch_hardening.sql` must be applied to production before this code is deployed)
 - [x] L3 close the open door (code done; needs the same migration and `ORGANIZER_EMAILS` in Vercel)
 - [x] L4 email-change notice
-- [ ] L5 end-to-end test
+- [x] L5 end-to-end test (spec and CI job written; first run is the `e2e` CI job, since Docker is unavailable in the Claude sandbox)
 - [x] L6 security review ([`SECURITY-REVIEW.md`](SECURITY-REVIEW.md): 1 high, a Supabase setting, now owner task H8; 3 medium and 6 low, with proposed fixes; no code changes)
 - [x] L7 migration path
 - [x] L8 seed, dry-run checklist, docs
@@ -444,7 +444,7 @@ Gift ideas
   (G1/G2 design in [`GIFT-IDEAS.md`](GIFT-IDEAS.md); migration `20261115000000_gift_suggestions.sql` applied to production on Nov 15, recorded there as version `20261115200853`; G3 adds `20261116100000_gift_generation_log.sql`, to be applied before deploy, and needs `ANTHROPIC_API_KEY` in Vercel: without it the panel keeps "Gift ideas are on their way")
 
 After launch
-- [ ] P1 · [ ] P2 · [ ] P3 · [ ] P4 · [ ] P5 · [ ] P6 · [ ] P7 · [x] P8 · [ ] P9
+- [x] P1 (Opus reviewed; migration `20261115210000_reveal_guard.sql` must be applied to production) · [ ] P2 · [ ] P3 · [ ] P4 · [ ] P5 · [ ] P6 · [ ] P7 · [x] P8 · [ ] P9
 
 ### If time runs short before Friday
 

@@ -86,3 +86,8 @@ export async function settingsAction(_p: ActionState, fd: FormData): Promise<Act
     }),
   );
 }
+
+export async function revealAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { groupId, actor } = await ctx(fd);
+  return done(groupId, await svc.revealMatches(groupId, actor));
+}

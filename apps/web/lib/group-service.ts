@@ -14,6 +14,7 @@ import { createAdminClient } from "./supabase/admin";
 import { signInLink } from "./links";
 import { refreshGiftIdeas } from "./gifts";
 import { sendEmails, type OutgoingEmail } from "./email/send";
+import { checkReveal, todayInEastern } from "./reveal";
 import { emailChangedNotice, matchEmail, profileUpdatedEmail, reminderEmail } from "./email/templates";
 
 /**
@@ -37,6 +38,7 @@ interface Group {
   budget_min_cents: number;
   budget_max_cents: number;
   exchange_date: string | null;
+  revealed_at: string | null;
 }
 
 interface Member {
@@ -69,7 +71,7 @@ async function assertAdmin(db: Db, groupId: string, actorUserId: string) {
 async function loadGroup(db: Db, groupId: string): Promise<Group> {
   const { data, error } = await db
     .from("groups")
-    .select("id, name, status, budget_min_cents, budget_max_cents, exchange_date")
+    .select("id, name, status, budget_min_cents, budget_max_cents, exchange_date, revealed_at")
     .eq("id", groupId)
     .single();
   if (error) throw error;
@@ -202,6 +204,7 @@ export async function addMember(
     const email = normalizeEmail(input.email);
     const phone = normalizePhone(input.phone);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so the roster can't change." };
 
     const { data: inserted, error } = await db
       .from("memberships")
@@ -266,6 +269,7 @@ export async function updateMember(
     const email = normalizeEmail(input.email);
     const phone = normalizePhone(input.phone);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so the roster can't change." };
     const { data: before } = await db
       .from("memberships")
       .select("email, display_name")
@@ -303,6 +307,7 @@ export async function removeMember(groupId: string, actorUserId: string, memberI
   try {
     await assertAdmin(db, groupId, actorUserId);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so the roster can't change." };
     const { data: member } = await db
       .from("memberships")
       .select("display_name, role")
@@ -404,6 +409,10 @@ export async function updateSettings(
     }
     const date = input.exchangeDate.trim() || null;
     if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, message: "Please pick a valid date." };
+    const group = await loadGroup(db, groupId);
+    if (date && date !== group.exchange_date && group.status !== "draft" && date <= todayInEastern()) {
+      return { ok: false, message: "Matches are already out, so the exchange date can only move to a future day." };
+    }
     const { error } = await db
       .from("groups")
       .update({ name, budget_min_cents: min, budget_max_cents: max, exchange_date: date })
@@ -411,6 +420,29 @@ export async function updateSettings(
     if (error) throw error;
     await audit(db, groupId, actorUserId, "settings_updated");
     return { ok: true, message: "Settings saved." };
+  } catch (err) {
+    return asOutcome(err);
+  }
+}
+
+/**
+ * The Reveal button. Opens only on/after the exchange date, once matches were sent.
+ * Setting revealed_at lets every member read all matches through Row Level Security.
+ * Returns a plain message only.
+ */
+export async function revealMatches(groupId: string, actorUserId: string): Promise<Outcome> {
+  const db = createAdminClient();
+  try {
+    await assertAdmin(db, groupId, actorUserId);
+    const group = await loadGroup(db, groupId);
+    const check = checkReveal(group);
+    if (!check.ok) return { ok: false, message: check.message };
+    // One database call checks, claims and audits together, so two clicks record one reveal.
+    const { data, error } = await db.rpc("reveal_group", { gid: groupId, actor: actorUserId });
+    if (error) throw error;
+    if (data === "already") return { ok: false, message: "Already revealed. Everyone can see who had whom." };
+    if (data !== "ok") return { ok: false, message: "Reveal isn't open yet. Check the exchange date." };
+    return { ok: true, message: "Revealed 🎁 Everyone can now see who had whom on their page." };
   } catch (err) {
     return asOutcome(err);
   }
@@ -450,6 +482,7 @@ export async function matchGroup(
   try {
     await assertAdmin(db, groupId, actorUserId);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so they can't be changed." };
     if (group.status === "sent" && !confirmedAfterSend) {
       return { ok: false, message: "Matches were already sent. Confirm to re-match; then press Send so everyone gets their new match." };
     }
@@ -582,6 +615,7 @@ export async function resendMatch(groupId: string, actorUserId: string, memberId
   try {
     await assertAdmin(db, groupId, actorUserId);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so there's nothing to resend." };
     if (group.status !== "sent") return { ok: false, message: "Matches haven't been sent yet." };
     const result = await emailMatches(db, group, [memberId]);
     await audit(db, groupId, actorUserId, "resent", { ok: result.sent === 1 });
@@ -655,6 +689,7 @@ export async function deliverProfileUpdates(): Promise<number> {
     const notified = Date.parse(r.notified_at as string);
     return Date.parse(r.last_edit_at as string) > notified && now - notified >= PROFILE_NOTIFY_THROTTLE_MS;
   });
+  console.info(`deliverProfileUpdates: ${rows.length} queued, ${due.length} due`);
   if (!due.length) return 0;
 
   const gifteeIds = due.map((r) => r.membership_id as string);
@@ -664,6 +699,7 @@ export async function deliverProfileUpdates(): Promise<number> {
     .in("receiver_id", gifteeIds)
     .eq("groups.status", "sent");
   if (pairsError) throw pairsError;
+  console.info(`deliverProfileUpdates: ${pairs.length} Santa(s) to tell`);
   if (!pairs.length) return 0;
 
   const memberIds = [...new Set(pairs.flatMap((p) => [p.giver_id as string, p.receiver_id as string]))];
