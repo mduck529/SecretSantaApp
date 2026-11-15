@@ -58,19 +58,16 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
   const phone = { ...devices["Pixel 7"], baseURL: origin };
 
   // Everything the organizer's browser receives for the organizer page and its server actions.
-  const captured: { method: string; path: string; status: number; body: string | null; error?: string }[] = [];
-  let adminPath = "";
-  page.on("response", async (response) => {
-    const url = new URL(response.url());
-    if (!adminPath || !url.pathname.startsWith(adminPath)) return;
-    const entry: (typeof captured)[number] = { method: response.request().method(), path: url.pathname, status: response.status(), body: null };
-    captured.push(entry);
-    try {
-      entry.body = await response.text();
-    } catch (err) {
-      entry.error = String(err); // e.g. redirects have no body to read
-    }
-  });
+  // The route handler reads each body before the page can navigate away (reading afterwards fails),
+  // then passes the response on unchanged.
+  const captured: { method: string; path: string; status: number; body: string }[] = [];
+  const captureAdminResponses = async (groupId: string) => {
+    await page.route(new RegExp(`/g/${groupId}/admin`), async (route) => {
+      const response = await route.fetch();
+      captured.push({ method: route.request().method(), path: new URL(route.request().url()).pathname, status: response.status(), body: await response.text() });
+      await route.fulfill({ response });
+    });
+  };
 
   // --- Organizer signs in with an emailed link -------------------------------------------------
   await page.goto("/login");
@@ -89,7 +86,8 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
   await page.getByRole("button", { name: "Create group" }).click();
   await expect(page).toHaveURL(/\/g\/[0-9a-f-]{36}\/admin$/);
   const groupId = new URL(page.url()).pathname.split("/")[2]!;
-  adminPath = `/g/${groupId}/admin`;
+  await captureAdminResponses(groupId);
+  await page.reload(); // so the first admin page view is captured too
 
   // --- Adds five people and one couple rule ----------------------------------------------------
   const addForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Add person" }) });
@@ -177,9 +175,9 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
 
   // --- Privacy: nothing the organizer's browser received names a pairing -----------------------
   await page.waitForLoadState("networkidle");
-  const summary = captured.map((c) => `${c.method} ${c.status} ${c.body === null ? `no body (${c.error})` : `${c.body.length} bytes`}`).join("; ");
-  const bodies = captured.flatMap((c) => (c.body === null ? [] : [c.body]));
-  const posts = captured.filter((c) => c.method === "POST" && c.body !== null);
+  const summary = captured.map((c) => `${c.method} ${c.status} ${c.body.length} bytes`).join("; ");
+  const bodies = captured.map((c) => c.body);
+  const posts = captured.filter((c) => c.method === "POST");
   // Every organizer action (5 adds, a rule, Match, Send, Resend, Remove) must have been captured,
   // or the checks below would pass for the wrong reason.
   expect(posts.length, `captured organizer server-action responses: ${summary}`).toBeGreaterThanOrEqual(10);
