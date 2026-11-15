@@ -435,7 +435,7 @@ Launch
 - [ ] L5 end-to-end test
 - [ ] L6 security review
 - [ ] L7 migration path
-- [ ] L8 seed, dry-run checklist, docs
+- [x] L8 seed, dry-run checklist, docs
 
 Gift ideas
 - [ ] G1 · [ ] G2 · [ ] G3 · [ ] G4 · [ ] G5
