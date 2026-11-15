@@ -434,7 +434,7 @@ Launch
 - [x] L4 email-change notice
 - [ ] L5 end-to-end test
 - [ ] L6 security review
-- [ ] L7 migration path
+- [x] L7 migration path
 - [ ] L8 seed, dry-run checklist, docs
 
 Gift ideas
