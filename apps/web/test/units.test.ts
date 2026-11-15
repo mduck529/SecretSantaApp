@@ -141,7 +141,11 @@ describe("checkReveal", () => {
     expect(checkReveal(sent, "2026-12-25").ok).toBe(true);
     expect(checkReveal(sent, "2026-12-30").ok).toBe(true);
   });
-  it("stays closed before the date", () => expect(checkReveal(sent, "2026-12-24").ok).toBe(false));
+  it("stays closed before the date and names the day", () => {
+    const r = checkReveal(sent, "2026-12-24");
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.message).toBe("You can reveal on Fri, Dec 25.");
+  });
   it("needs sent matches and a date", () => {
     expect(checkReveal({ ...sent, status: "matched" }, "2027-01-01").ok).toBe(false);
     expect(checkReveal({ ...sent, exchange_date: null }, "2027-01-01").ok).toBe(false);

@@ -16,6 +16,14 @@ export function checkReveal(
   if (g.revealed_at) return { ok: false, message: "Already revealed. Everyone can see who had whom." };
   if (g.status !== "sent") return { ok: false, message: "Send the matches first." };
   if (!g.exchange_date) return { ok: false, message: "Set the exchange date in Settings first." };
-  if (today < g.exchange_date) return { ok: false, message: "Reveal opens on the exchange date." };
+  if (today < g.exchange_date) {
+    const day = new Date(`${g.exchange_date}T12:00:00Z`).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+    return { ok: false, message: `You can reveal on ${day}.` };
+  }
   return { ok: true };
 }

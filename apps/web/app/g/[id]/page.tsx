@@ -43,7 +43,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   }
 
   // After the organizer reveals, Row Level Security lets every member read all matches.
-  let pairs: { giver: string; receiver: string }[] = [];
+  let pairs: { id: string; giver: string; receiver: string }[] = [];
   if (group.revealed_at) {
     const [{ data: all }, { data: people }] = await Promise.all([
       supabase.from("assignments").select("giver_id, receiver_id").eq("group_id", groupId),
@@ -51,7 +51,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     ]);
     const nameOf = new Map((people ?? []).map((p) => [p.id as string, p.display_name as string]));
     pairs = (all ?? [])
-      .map((a) => ({ giver: nameOf.get(a.giver_id) ?? "Someone", receiver: nameOf.get(a.receiver_id) ?? "someone" }))
+      .map((a) => ({ id: a.giver_id as string, giver: nameOf.get(a.giver_id) ?? "Someone", receiver: nameOf.get(a.receiver_id) ?? "someone" }))
       .sort((a, b) => a.giver.localeCompare(b.giver));
   }
 
@@ -115,7 +115,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           <h2>Who had whom 🎁</h2>
           <ul className="people">
             {pairs.map((p) => (
-              <li key={p.giver}>
+              <li key={p.id}>
                 <strong>{p.giver}</strong> had {p.receiver}
               </li>
             ))}
