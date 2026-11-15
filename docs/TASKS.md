@@ -441,7 +441,7 @@ Gift ideas
 - [ ] G1 · [ ] G2 · [ ] G3 · [ ] G4 · [ ] G5
 
 After launch
-- [ ] P1 · [ ] P2 · [ ] P3 · [ ] P4 · [ ] P5 · [ ] P6 · [ ] P7 · [ ] P8 · [ ] P9
+- [ ] P1 · [ ] P2 · [ ] P3 · [ ] P4 · [ ] P5 · [ ] P6 · [ ] P7 · [x] P8 · [ ] P9
 
 ### If time runs short before Friday
 
