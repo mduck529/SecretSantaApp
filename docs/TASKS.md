@@ -437,13 +437,14 @@ Launch
 - [ ] L5 end-to-end test
 - [x] L6 security review ([`SECURITY-REVIEW.md`](SECURITY-REVIEW.md): 1 high, a Supabase setting, now owner task H8; 3 medium and 6 low, with proposed fixes; no code changes. The 3 medium are fixed in `task/l6-medium-fixes`; migration `20261116000000_memberships_column_grants.sql` must be applied to production before that code is deployed)
 - [x] L7 migration path
-- [ ] L8 seed, dry-run checklist, docs
+- [x] L8 seed, dry-run checklist, docs
 
 Gift ideas
-- [ ] G1 · [ ] G2 · [ ] G3 · [ ] G4 · [ ] G5
+- [x] G1 · [x] G2 · [ ] G3 · [ ] G4 · [ ] G5
+  (G1/G2 design in [`GIFT-IDEAS.md`](GIFT-IDEAS.md); migration `20261115000000_gift_suggestions.sql` applied to production on Nov 15, recorded there as version `20261115200853`)
 
 After launch
-- [ ] P1 · [ ] P2 · [ ] P3 · [ ] P4 · [ ] P5 · [ ] P6 · [ ] P7 · [ ] P8 · [ ] P9
+- [x] P1 (Opus reviewed; migration `20261115210000_reveal_guard.sql` must be applied to production) · [ ] P2 · [ ] P3 · [ ] P4 · [ ] P5 · [ ] P6 · [ ] P7 · [x] P8 · [ ] P9
 
 ### If time runs short before Friday
 

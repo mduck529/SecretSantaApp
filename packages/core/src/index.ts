@@ -5,3 +5,4 @@ export * from "./validate.js";
 export * from "./repair.js";
 export * from "./budget.js";
 export * from "./questionnaire.js";
+export * from "./gifts/index.js";

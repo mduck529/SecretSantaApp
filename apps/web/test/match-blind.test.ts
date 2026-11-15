@@ -12,7 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // In-memory Supabase (only what group-service.ts uses)
 // ---------------------------------------------------------------------------
 
-type Row = Record<string, any>;
+type Row = Record<string, unknown>;
+type Result = { data: unknown; error: { code: string; message: string } | null };
 const tables: Record<string, Row[]> = {};
 
 function reset() {
@@ -21,10 +22,10 @@ function reset() {
   }
 }
 
-class Query implements PromiseLike<{ data: any; error: any }> {
+class Query implements PromiseLike<Result> {
   private filters: ((r: Row) => boolean)[] = [];
   private op: "select" | "insert" | "update" | "delete" | "upsert" = "select";
-  private values: any;
+  private values: Row | Row[] = [];
   private returning = false;
   private one: "single" | "maybe" | null = null;
 
@@ -35,17 +36,17 @@ class Query implements PromiseLike<{ data: any; error: any }> {
     else this.returning = true;
     return this;
   }
-  insert(values: any) {
+  insert(values: Row | Row[]) {
     this.op = "insert";
     this.values = values;
     return this;
   }
-  update(values: any) {
+  update(values: Row) {
     this.op = "update";
     this.values = values;
     return this;
   }
-  upsert(values: any) {
+  upsert(values: Row | Row[]) {
     this.op = "upsert";
     this.values = values;
     return this;
@@ -58,11 +59,11 @@ class Query implements PromiseLike<{ data: any; error: any }> {
     if (col === "groups.status") return tables.groups!.find((g) => g.id === r.group_id)?.status;
     return r[col];
   }
-  eq(col: string, v: any) {
+  eq(col: string, v: unknown) {
     this.filters.push((r) => this.get(r, col) === v);
     return this;
   }
-  in(col: string, vs: any[]) {
+  in(col: string, vs: unknown[]) {
     this.filters.push((r) => vs.includes(this.get(r, col)));
     return this;
   }
@@ -84,7 +85,7 @@ class Query implements PromiseLike<{ data: any; error: any }> {
     this.one = "maybe";
     return this;
   }
-  private run(): { data: any; error: any } {
+  private run(): Result {
     const rows = tables[this.table]!;
     const match = (r: Row) => this.filters.every((f) => f(r));
     let out: Row[] = [];
@@ -93,7 +94,7 @@ class Query implements PromiseLike<{ data: any; error: any }> {
         out = rows.filter(match);
         break;
       case "insert": {
-        const list = (Array.isArray(this.values) ? this.values : [this.values]).map((v: Row) => ({
+        const list: Row[] = (Array.isArray(this.values) ? this.values : [this.values]).map((v) => ({
           id: crypto.randomUUID(),
           match_email_status: "not_sent",
           match_email_sent_at: null,
@@ -102,7 +103,7 @@ class Query implements PromiseLike<{ data: any; error: any }> {
           role: "member",
           ...v,
         }));
-        if (this.table === "memberships" && list.some((v: Row) => rows.some((r) => r.group_id === v.group_id && r.email === v.email))) {
+        if (this.table === "memberships" && list.some((v) => rows.some((r) => r.group_id === v.group_id && r.email === v.email))) {
           return { data: null, error: { code: "23505", message: "duplicate" } };
         }
         rows.push(...list);
@@ -132,16 +133,16 @@ class Query implements PromiseLike<{ data: any; error: any }> {
     }
     return { data, error: null };
   }
-  then<A, B>(ok?: ((v: { data: any; error: any }) => A | PromiseLike<A>) | null, bad?: ((e: any) => B | PromiseLike<B>) | null) {
+  then<A, B>(ok?: ((v: Result) => A | PromiseLike<A>) | null, bad?: ((e: unknown) => B | PromiseLike<B>) | null) {
     return Promise.resolve(this.run()).then(ok, bad);
   }
 }
 
 const fakeDb = {
   from: (table: string) => new Query(table),
-  rpc: async (fn: string, args: any) => {
+  rpc: async (fn: string, args: { gid: string; pairs: { giver: string; receiver: string }[]; action: string; remove_member: string | null }) => {
     if (fn !== "save_assignments") throw new Error(`unexpected rpc ${fn}`);
-    tables.assignments = args.pairs.map((p: any) => ({ group_id: args.gid, giver_id: p.giver, receiver_id: p.receiver }));
+    tables.assignments = args.pairs.map((p) => ({ group_id: args.gid, giver_id: p.giver, receiver_id: p.receiver }));
     if (args.remove_member) tables.memberships = tables.memberships!.filter((m) => m.id !== args.remove_member);
     tables.audit_log!.push({ group_id: args.gid, action: args.action, details: { participants: args.pairs.length } });
     return { data: args.pairs.length, error: null };
