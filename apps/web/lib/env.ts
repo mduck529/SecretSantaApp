@@ -40,5 +40,7 @@ export const serverEnv = {
   },
   /** Optional: without it, gift ideas are not generated and the panel keeps its "on their way" text. */
   anthropicApiKey: () => process.env.ANTHROPIC_API_KEY || null,
+  /** Where replies go (santa@bassl.xyz has no inbox). Optional: without it, replies go to the sender. */
+  emailReplyTo: () => process.env.EMAIL_REPLY_TO || undefined,
   cronSecret: () => process.env.CRON_SECRET || null,
 };

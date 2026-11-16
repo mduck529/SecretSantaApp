@@ -100,6 +100,7 @@ In Vercel → Project → **Settings → Environment Variables**, add (for Produ
 | `SMTP_USER` | `resend` |
 | `SMTP_PASS` | The Resend API key from step 3 |
 | `EMAIL_FROM` | `Family Secret Santa <santa@bassl.xyz>` |
+| `EMAIL_REPLY_TO` | `secretsanta8@gmail.com` (`santa@bassl.xyz` has no inbox, so replies go here) |
 | `APP_URL` | `https://YOUR-APP-URL` |
 | `CRON_SECRET` | Any long random string (protects the email-sending job) |
 | `ORGANIZER_EMAILS` | Your own email address (comma-separate several). Only these people can start a group |
