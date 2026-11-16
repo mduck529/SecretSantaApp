@@ -30,5 +30,7 @@ export const serverEnv = {
   },
   /** Gmail only sends as the signed-in account, so the address must match SMTP_USER. */
   emailFrom: () => process.env.EMAIL_FROM || `Secret Santa <${process.env.SMTP_USER}>`,
+  /** Optional: without it, gift ideas are not generated and the panel keeps its "on their way" text. */
+  anthropicApiKey: () => process.env.ANTHROPIC_API_KEY || null,
   cronSecret: () => process.env.CRON_SECRET || null,
 };

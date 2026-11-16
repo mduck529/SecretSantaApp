@@ -1,6 +1,7 @@
 import Link from "next/link";
-import type { Answers } from "@santa/core";
+import type { Answers, GiftIdeas } from "@santa/core";
 import { ActionForm, SubmitButton } from "@/components/action-form";
+import { GiftIdeasPanel } from "@/components/gift-ideas";
 import { AnswersView, QuestionnaireFields } from "@/components/questionnaire";
 import { requireMember } from "@/lib/auth";
 import { formatExchangeDate, groupBudget } from "@/lib/group-service";
@@ -26,7 +27,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     .maybeSingle();
 
   // Only after the organizer presses Send. RLS returns only this person's own match.
-  let giftee: { name: string; answers: Answers | null } | null = null;
+  let giftee: { name: string; answers: Answers | null; ideas: GiftIdeas | null } | null = null;
   if (group.status === "sent") {
     const { data: match } = await supabase
       .from("assignments")
@@ -34,11 +35,15 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
       .eq("giver_id", membership.id)
       .maybeSingle();
     if (match) {
-      const [{ data: person }, { data: theirs }] = await Promise.all([
+      const [{ data: person }, { data: theirs }, { data: cached }] = await Promise.all([
         supabase.from("memberships").select("display_name").eq("id", match.receiver_id).single(),
         supabase.from("questionnaire_answers").select("answers").eq("membership_id", match.receiver_id).maybeSingle(),
+        // The signed-in client, not the service role: RLS shows this row only to the current Santa.
+        supabase.from("gift_suggestions").select("ideas").eq("receiver_id", match.receiver_id).maybeSingle(),
       ]);
-      giftee = { name: person?.display_name ?? "your giftee", answers: (theirs?.answers as Answers) ?? null };
+      giftee = { name: person?.display_name ?? "your giftee", answers: (theirs?.answers as Answers) ?? null,
+        ideas: (cached?.ideas as GiftIdeas) ?? null,
+      };
     }
   }
 
@@ -94,10 +99,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
                 {giftee.name} hasn&apos;t filled out their questionnaire yet. We&apos;ll email you as soon as they do.
               </p>
             )}
-            <div className="ideas">
-              <h3>Gift ideas</h3>
-              <p className="muted">Personalized gift ideas (things to buy and things to make) are coming soon.</p>
-            </div>
+            <GiftIdeasPanel ideas={giftee.ideas} name={giftee.name} hasAnswers={!!hasGifteeAnswers} />
           </>
         ) : (
           <>

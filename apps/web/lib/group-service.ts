@@ -12,6 +12,7 @@ import {
 } from "@santa/core";
 import { createAdminClient } from "./supabase/admin";
 import { signInLink } from "./links";
+import { refreshGiftIdeas } from "./gifts";
 import { sendEmails, type OutgoingEmail } from "./email/send";
 import { checkReveal, todayInEastern } from "./reveal";
 import { emailChangedNotice, matchEmail, profileUpdatedEmail, reminderEmail } from "./email/templates";
@@ -672,6 +673,16 @@ export async function deliverProfileUpdates(): Promise<number> {
   const db = createAdminClient();
   const { data: rows, error } = await db.from("profile_notifications").select("membership_id, last_edit_at, notified_at");
   if (error) throw error;
+  // Gift ideas first, for everyone in a sent group whose cached ideas are missing or stale (this also
+  // covers people who filled in their questionnaire before the draw). A failure never blocks emails.
+  let freshIdeas = new Set<string>();
+  try {
+    const { data: sent } = await db.from("assignments").select("receiver_id, groups!inner(status)").eq("groups.status", "sent");
+    freshIdeas = await refreshGiftIdeas(db, [...new Set((sent ?? []).map((a) => a.receiver_id as string))]);
+  } catch (err) {
+    console.error("refreshGiftIdeas", err instanceof Error ? err.name : "error");
+  }
+
   const now = Date.now();
   const due = rows.filter((r) => {
     if (!r.notified_at) return true;
@@ -710,6 +721,7 @@ export async function deliverProfileUpdates(): Promise<number> {
         to: santa.email as string,
         name: santa.display_name as string,
         giftee: giftee.display_name as string,
+        newIdeas: freshIdeas.has(giftee.id as string),
         link: await signInLink(santa.email as string, `/g/${p.group_id}#match`),
       }),
     );

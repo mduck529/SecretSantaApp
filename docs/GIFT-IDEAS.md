@@ -22,7 +22,7 @@ giftee changes their answers.
 | Privacy checks | `supabase/tests/rls_test.sql` ("Gift ideas" section) |
 
 Everything is exported from `@santa/core`. The core package has no dependencies and makes no
-API calls; the Claude API call belongs in `apps/web/lib/gifts.ts` (G3).
+API calls; the Claude API call lives in `apps/web/lib/gifts.ts` (G3); the panel is `apps/web/components/gift-ideas.tsx` (G4). The daily cap uses `gift_generation_log` (migration `20261116100000`, cap 200 per rolling 24 hours).
 
 ## Flow
 
