@@ -62,7 +62,7 @@ jobs:
           cache: pnpm
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 3.1.0
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @santa/web exec playwright install --with-deps chromium
       # Applies supabase/migrations. Skips services the app doesn't use.
