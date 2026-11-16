@@ -14,7 +14,8 @@ Current status and the task queue: [`docs/TASKS.md`](docs/TASKS.md).
 | `supabase/tests` | Privacy tests run against plain Postgres |
 | `supabase/seed.sql` | Dry-run data: one test group, 12 people, 5 couples, a few questionnaires. Never run in production |
 | `docs/DRY-RUN.md` | Checklist for the pre-launch dry run with a throwaway group |
-| Email | Gmail SMTP through Nodemailer (`SMTP_*` settings; leave `SMTP_PASS` empty to print emails to the server log) |
+| Live site | [bassl.xyz](https://bassl.xyz) on Vercel (`www.bassl.xyz` and the old `.vercel.app` address redirect there) |
+| Email | Resend SMTP through Nodemailer, sent from `santa@bassl.xyz` (`SMTP_*` settings; leave `SMTP_PASS` empty to print emails to the server log) |
 
 ## Privacy rules (enforced in the database)
 

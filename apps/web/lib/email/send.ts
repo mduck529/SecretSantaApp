@@ -52,7 +52,7 @@ export async function sendEmails(emails: readonly OutgoingEmail[]): Promise<bool
   try {
     for (const e of emails) {
       try {
-        await transport.sendMail({ from: serverEnv.emailFrom(), to: e.to, subject: e.subject, html: e.html, text: e.text });
+        await transport.sendMail({ from: serverEnv.emailFrom(), replyTo: serverEnv.emailReplyTo(), to: e.to, subject: e.subject, html: e.html, text: e.text });
         results.push(true);
       } catch (err) {
         // No address and no raw error: SMTP errors quote the recipient, and after an add or
