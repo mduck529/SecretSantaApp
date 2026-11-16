@@ -8,7 +8,7 @@ plus every place the app touches matches, sign-in, or email. Plan step 1.8._
 | Severity | Count | Fixed in this pull request |
 |---|---|---|
 | High | 1 | No: it's a Supabase setting, so the owner has to change it (task **H8**) |
-| Medium | 3 | No (proposed fixes below) |
+| Medium | 3 | **Fixed** afterwards in `task/l6-medium-fixes` (M-1 to M-3; see each finding) |
 | Low | 6 | No |
 
 The privacy model holds where it matters most. Row Level Security is on for all 8 tables, and
@@ -103,6 +103,22 @@ typeof next === "string" && /^\/(?![\/\\])/.test(next) && !/[\\\u0000-\u001f\u00
 Add unit tests for `/\evil.com`, `/\t/evil.com` and `/%5Cevil.com`. The last one is safe: it
 stays on our own site.
 
+**Status: fixed** (`task/l6-medium-fixes`). `safeNext` (`apps/web/lib/auth.ts`) now:
+
+- requires one leading `/` not followed by `/` or `\`;
+- refuses any backslash, any whitespace (tab, newline, space, no-break space, line separators),
+  control characters (C0, DEL, C1) and invisible characters (zero-width, bidi, BOM) anywhere;
+- then checks with the WHATWG URL parser that the path stays on our origin and doesn't resolve
+  to a `//` path (so `/.//evil.com` is refused too);
+- refuses anything over 2,048 characters or that isn't a string.
+
+Unit tests in `apps/web/test/units.test.ts` cover every bypass above plus variants (`/\/`,
+`\\`, `/\n/`, `/\r\n/`, leading tab or space, `//\t`, NUL, vertical tab, form feed, DEL,
+U+0085, U+00A0, U+2028, U+200B, U+FEFF, a backslash deeper in the path, `/.//`, `/..//`,
+`http:/`, `javascript:`). Same-site paths with query, hash and percent-encoding (including
+`/%5Cevil.com`) still pass, and a guard test checks that the bypass strings really do leave the
+site in the URL parser, so the tests keep proving something.
+
 ### M-2. Any member can see whose match changed after an add or remove (needs the anon key)
 
 **Where:** `memberships` grants `select` on every column to `authenticated` (initial schema), and
@@ -131,6 +147,21 @@ grant select (id, group_id, display_name, email, user_id, role,
 Add a check to `rls_test.sql` that a member can't select `match_email_sent_at`. The server
 (service role) still reads it for the "your match has changed" wording.
 
+**Status: fixed** (`task/l6-medium-fixes`) in the new migration
+`supabase/migrations/20261116000000_memberships_column_grants.sql` (**the owner must apply it**).
+It revokes table-wide `select` on `memberships` from `authenticated` and grants only `id,
+group_id, display_name, email, user_id, role, questionnaire_complete, match_email_status,
+created_at`: every column the app reads, filters or sorts by with a user's session
+(`requireMember`, the person page, the organizer page, and the `contacts_select` policy).
+`match_email_sent_at`, `questionnaire_updated_at`, `last_reminded_at` and the new
+`match_email_retry` (see M-3) are server-only. `anon` keeps no access. `rls_test.sql` now checks
+that members and the organizer can't select, filter or sort on the hidden columns (or use
+`select *` or `to_jsonb(row)`), that every column the app reads still works, and that
+`authenticated` holds exactly the listed column grants.
+
+`match_email_status` stays readable (the organizer's badges need it), so M-3 also stops
+follow-up emails from changing it.
+
 ### M-3. A failed follow-up email names the person whose match changed
 
 **Where:** `addMember` and `removeMember` → `emailMatches` (`lib/group-service.ts:243`, `:332`,
@@ -152,6 +183,37 @@ organizer is looking.
 to a person. Say "One email didn't go through. We'll try again automatically." Record the
 failure in a server-only place, such as a column the organizer can't select (see M-2) or a
 server-only table, and retry it from the daily cron. Drop the address from the log line.
+
+**Status: fixed** (`task/l6-medium-fixes`). In `lib/group-service.ts`, `emailMatches` takes
+`blindIds`: the people whose match changed because someone else was added or removed. For them:
+
+- **Result message:** counts only. Remove: "Removed Bob. One person got a new match. One email
+  didn't go through, so we'll try again automatically." Add: "Added Dave and sent them their
+  match. One other person's match changed. That email didn't go through, so we'll try again
+  automatically." The newcomer is still named if *their own* email fails (the organizer just
+  typed that address, and it says nothing about who has whom).
+- **Badge:** `match_email_status` is never changed for a blind person, on failure *or* success
+  (a badge flipping from "Email failed" to "Email sent" right after an add would also point at
+  the Santa). Only server-only columns change: `match_email_sent_at`, and the new
+  `match_email_retry` flag on failure.
+- **Retry:** the daily cron (`/api/cron/notify`) calls `retryChangedMatchEmails`, which resends
+  "your match has changed" to everyone flagged in a group that is still `sent`, match-blind
+  again, and audits counts only. An organizer's Resend or a full Send also clears the flag.
+- **Log line:** `send.ts` now logs "An email failed to send (code EENVELOPE, SMTP 550, during
+  RCPT TO)": error codes only, no address and no raw error (Nodemailer's message, `response`
+  and `rejected` fields quote the recipient). A sign-in link that can't be made now counts as
+  one failed email rather than failing the whole batch, and is logged as a count.
+
+Tests: `apps/web/test/match-blind.test.ts` runs the real `addMember`, `removeMember`,
+`resendMatch` and the retry against an in-memory Supabase stand-in and a fake SMTP server that
+rejects addresses the way Gmail does. It checks that the result message, audit entries and every
+log line never name the Santa, that no blind person's status changes, that the retry flag is set
+and cleared, and that the retry stops after a re-match. Pure helpers are covered in
+`units.test.ts`.
+
+Known limit: if a blind person's address is wrong, the retry keeps failing quietly once a day.
+Their first match email would normally have failed visibly already, and fixing the address and
+pressing Resend sends their current match and clears the flag.
 
 ---
 
@@ -216,7 +278,8 @@ this can't run script.
 
 ### L-6. Email addresses in the server log
 
-`send.ts:43` logs the recipient of every failed email. That is part of M-3. Separately, the
+`send.ts:43` logged the recipient of every failed email. That is part of M-3 and is now fixed
+(codes only). Separately, the
 email-change notice and the logs are the only places a person's old and new addresses sit side
 by side. Fine for a family, but worth trimming before any public use.
 

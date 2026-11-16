@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { explainProblem, formatExchangeDate, groupBudget, normalizeEmail, normalizePhone } from "@/lib/group-service";
+import {
+  addedAfterSendMessage,
+  explainProblem,
+  formatExchangeDate,
+  groupBudget,
+  normalizeEmail,
+  normalizePhone,
+  planDeliveryUpdates,
+  removedAfterSendMessage,
+} from "@/lib/group-service";
+import { describeSendError } from "@/lib/email/send";
 import { emailChangedNotice, maskEmail, matchEmail, profileUpdatedEmail, reminderEmail } from "@/lib/email/templates";
 import { checkReveal, todayInEastern } from "@/lib/reveal";
 import { canCreateGroups, deadLinkOutcome, safeNext } from "@/lib/auth";
@@ -53,6 +63,82 @@ describe("safeNext", () => {
     expect(safeNext("//evil.example")).toBe("/home");
     expect(safeNext("https://evil.example")).toBe("/home");
     expect(safeNext(null)).toBe("/home");
+  });
+
+  it.each([
+    "/g/123",
+    "/g/123#questionnaire",
+    "/g/123?tab=admin&x=1",
+    "/home",
+    "/",
+    "/g/123/admin",
+    "/a//b", // a double slash later in the path stays on our site
+    "/%5Cevil.com", // percent-encoded backslash: the browser keeps it in the path
+    "/%2F%2Fevil.com",
+    "/%09/evil.com",
+    "/caf%C3%A9",
+  ])("keeps the same-site path %j", (path) => {
+    expect(safeNext(path)).toBe(path);
+    // And the browser would indeed stay on our site.
+    expect(new URL(path, "https://santa.example").origin).toBe("https://santa.example");
+  });
+
+  it.each([
+    // Security review M-1: backslash and whitespace tricks.
+    "/\\evil.com",
+    "/\\/evil.com",
+    "/\\\\evil.com",
+    "\\\\evil.com",
+    "\\/evil.com",
+    "/\t/evil.com",
+    "/\n/evil.com",
+    "/\r/evil.com",
+    "/\r\n/evil.com",
+    "/\t\\evil.com",
+    "\t//evil.com",
+    " //evil.com",
+    "/ /evil.com",
+    "//\tevil.com",
+    "/\u0000/evil.com",
+    "/\u000b/evil.com",
+    "/\u000c/evil.com",
+    "/\u001f/evil.com",
+    "/\u007f/evil.com",
+    "/\u0085/evil.com",
+    "/\u00a0/evil.com",
+    "/\u2028/evil.com",
+    "/\u200b/evil.com",
+    "/\ufeff/evil.com",
+    "/g/1\\..\\..\\evil.com", // a backslash anywhere, not just at the start
+    "/g/1\tx",
+    // Slashes and schemes.
+    "//evil.com",
+    "///evil.com",
+    "/.//evil.com", // normalizes to //evil.com
+    "/..//evil.com",
+    "https://evil.com",
+    "http:/evil.com",
+    "javascript:alert(1)",
+    "evil.com",
+    "",
+    "/" + "a".repeat(3000),
+  ])("rejects %j", (path) => {
+    expect(safeNext(path)).toBe("/home");
+  });
+
+  it("rejects anything that isn't a string", () => {
+    expect(safeNext(undefined)).toBe("/home");
+    expect(safeNext(["/g/1", "//evil.com"])).toBe("/home");
+    expect(safeNext({ toString: () => "/g/1" })).toBe("/home");
+    expect(safeNext(42, "/login")).toBe("/login");
+  });
+
+  it("the review's bypasses really did leave the site before the fix", () => {
+    // Guards the test cases themselves: if the URL parser stops treating these as off-site,
+    // the rejection tests above would no longer be proving anything.
+    for (const path of ["/\\evil.com", "/\t/evil.com", "/\n/evil.com", "\t//evil.com"]) {
+      expect(new URL(path, "https://santa.example").host).toBe("evil.com");
+    }
   });
 });
 
@@ -132,6 +218,53 @@ describe("canCreateGroups", () => {
   it("with no list: nobody in production, anyone in development", () => {
     expect(canCreateGroups("me@example.com", "", true)).toBe(false);
     expect(canCreateGroups("me@example.com", undefined, false)).toBe(true);
+  });
+});
+
+describe("match-blind delivery bookkeeping (security review M-3)", () => {
+  it("never puts a blind person in the organizer-visible lists", () => {
+    const plan = planDeliveryUpdates(["new", "santa", "other"], [true, false, true], ["santa", "other"]);
+    expect(plan).toEqual({ sent: ["new"], failed: [], blindSent: ["other"], blindFailed: ["santa"] });
+  });
+
+  it("treats a missing result as a failure", () => {
+    expect(planDeliveryUpdates(["a", "b"], [true], ["b"]).blindFailed).toEqual(["b"]);
+  });
+
+  it("is visible as usual when nobody is blind (Send, Resend)", () => {
+    expect(planDeliveryUpdates(["a", "b"], [true, false])).toEqual({ sent: ["a"], failed: ["b"], blindSent: [], blindFailed: [] });
+  });
+
+  it("words add and remove results without names", () => {
+    expect(addedAfterSendMessage("Dave", { newcomerFailed: false, othersFailed: 0 })).toBe(
+      "Added Dave and sent them their match. One other person's match changed and they've been emailed.",
+    );
+    expect(addedAfterSendMessage("Dave", { newcomerFailed: false, othersFailed: 1 })).toContain("we'll try again automatically");
+    expect(removedAfterSendMessage("Bob", 2, 0)).toBe("Removed Bob. 2 people got a new match by email.");
+    expect(removedAfterSendMessage("Bob", 2, 1)).toBe(
+      "Removed Bob. 2 people got a new match. One email didn't go through, so we'll try again automatically.",
+    );
+    expect(removedAfterSendMessage("Bob", 2, 2)).toContain("2 emails didn't go through");
+  });
+});
+
+describe("describeSendError", () => {
+  it("keeps codes and drops anything that could hold an address", () => {
+    const err = Object.assign(new Error("550 <bob@example.com>: Recipient address rejected"), {
+      code: "EENVELOPE",
+      responseCode: 550,
+      command: "RCPT TO",
+      response: "550 5.1.1 <bob@example.com>",
+      rejected: ["bob@example.com"],
+    });
+    expect(describeSendError(err)).toBe("code EENVELOPE, SMTP 550, during RCPT TO");
+  });
+
+  it("ignores codes that aren't plain codes", () => {
+    expect(describeSendError({ code: "bob@example.com", command: "<bob@example.com>" })).toBe("unknown error");
+    expect(describeSendError(new Error("bob@example.com"))).toBe("unknown error");
+    expect(describeSendError("bob@example.com")).toBe("unknown error");
+    expect(describeSendError(null)).toBe("unknown error");
   });
 });
 

@@ -15,6 +15,21 @@ export interface OutgoingEmail {
  * Returns one success flag per email, in order. Without SMTP_PASS outside production,
  * prints the emails to the server log instead (for local development).
  */
+/**
+ * A log-safe summary of a failed send: error codes only. Nodemailer's message, `response`,
+ * `rejected` and `envelope` fields can all contain the recipient's address.
+ */
+export function describeSendError(err: unknown): string {
+  if (!err || typeof err !== "object") return "unknown error";
+  const e = err as { code?: unknown; responseCode?: unknown; command?: unknown };
+  const parts = [
+    typeof e.code === "string" && /^[A-Z0-9_]{1,40}$/.test(e.code) ? `code ${e.code}` : null,
+    typeof e.responseCode === "number" ? `SMTP ${e.responseCode}` : null,
+    typeof e.command === "string" && /^[A-Z ]{1,20}$/.test(e.command) ? `during ${e.command}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(", ") : "unknown error";
+}
+
 export async function sendEmails(emails: readonly OutgoingEmail[]): Promise<boolean[]> {
   const smtp = serverEnv.smtp();
   if (!smtp) {
@@ -40,7 +55,9 @@ export async function sendEmails(emails: readonly OutgoingEmail[]): Promise<bool
         await transport.sendMail({ from: serverEnv.emailFrom(), to: e.to, subject: e.subject, html: e.html, text: e.text });
         results.push(true);
       } catch (err) {
-        console.error(`Email to ${e.to} failed`, err);
+        // No address and no raw error: SMTP errors quote the recipient, and after an add or
+        // remove who got an email shows whose match changed (security review M-3).
+        console.error(`An email failed to send (${describeSendError(err)})`);
         results.push(false);
       }
     }
