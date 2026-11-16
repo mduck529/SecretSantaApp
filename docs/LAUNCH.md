@@ -1,6 +1,6 @@
 # Launch guide
 
-_Written 2026-11-15 for the owner. Gift ideas are due **Fri Nov 20**._
+_Written 2026-11-15, updated 2026-11-16, for the owner. Gift ideas are due **Fri Nov 20**._
 
 This is the order to do things in, with a checkbox for each. Nothing here needs code.
 You work in three places: the **app** (https://secretsantaapp-web.vercel.app), **Vercel**
@@ -24,25 +24,19 @@ Right now nothing has been launched. The production database has no groups and n
 
 ### Must be true before you press Send
 
-- [ ] **The questionnaire bug is fixed and live.** This is the one blocker. Today, saving the
-      questionnaire fails for every member ("permission denied"). The fix is in pull request
-      [#5](https://github.com/mduck529/SecretSantaApp/pull/5). As of this writing that pull request is
-      still open, has conflicts with `main`, and its automated tests have not run yet. It needs to be
-      finished, merged into `main`, and then Vercel deploys `main` to production by itself
-      (check Vercel → Deployments shows the new one as **Ready**). Do not launch before this.
-- [ ] **The dry run passed** (section 3).
+- [x] **The questionnaire bug is fixed and live.** Saving the questionnaire used to fail for every
+      member. The fix (PR #11, plus the end-to-end test in #5) is merged and deployed. The dry run
+      (section 3) is where you see it work with your own eyes.
 - [ ] **The settings in section 2 are done.**
+- [ ] **The dry run passed** (section 3).
 
-### Recommended, not required
+There is no remaining code blocker. Everything else that was recommended is also in:
 
-- **Security fixes M-1 to M-3** (branch `task/l6-medium-fixes`). They are small privacy and
-  phishing hardening items from the security review ([`SECURITY-REVIEW.md`](SECURITY-REVIEW.md)).
-  If they are merged before you launch, great. If not, launching is acceptable for a family group,
-  but note M-1 (a link on our own address that could redirect someone elsewhere) and M-2/M-3
-  (a member with technical skill could work out who was affected by a later add or remove).
-  Ask for them to be merged first if you want the safest start.
-- **Reveal** (pull request #2) is not needed to launch. It is needed by exchange day.
-  Its database change must be applied to production **before** its code goes live.
+- **Security fixes M-1 to M-3** (phishing-redirect fix and two small privacy leaks after an add or
+  remove) are merged, and their database change is applied to production.
+- **Reveal** (for exchange day) is merged, and its database change is applied.
+- **Gift ideas** code is merged, and its database changes are applied. It does nothing until you add
+  the Anthropic key (section 2).
 
 ## 2. The remaining settings
 
@@ -55,8 +49,7 @@ Do these before the dry run.
       The variable exists, but its value is hidden, so open it and check it contains the exact
       address you will sign in with (lowercase; commas between several). Only people on this list
       can start a group. If you change it, redeploy.
-- [ ] **Anthropic API key (H7), by Mon Nov 16 to Wed Nov 18.** Not needed for launch itself, only
-      for gift ideas. Create a key in your Anthropic account, then add it in Vercel as
+- [ ] **Anthropic API key (H7), due now.** Not needed for launch itself, only for gift ideas (due Nov 20). Create a key in your Anthropic account, then add it in Vercel as
       `ANTHROPIC_API_KEY` for Production (mark it Sensitive). Redeploy. Ideally set a monthly
       spend limit on the key. Adding it earlier than needed is harmless.
 - [ ] **Confirm Supabase is locked down** (already done today; just look): **Authentication → Sign In /
@@ -157,13 +150,12 @@ Do this when the dry run passed. Pick a time when you can sit at the computer fo
 
 ## 6. What comes later
 
-- **Gift ideas (by Fri Nov 20).** Santas will see suggestions based on their giftee's answers.
-  Needs: the Anthropic key (section 2), the gift engine and screen being finished (G3/G4), and a
-  production deploy. I'll tell you when each piece is ready. Nobody needs to do anything to get them
-  except fill in the questionnaire.
-- **Reveal (exchange day).** After the exchange, you press Reveal to show who had whom. That is
-  pull request #2. Before it goes live, its database change must be applied to production,
-  which I will tell you about at the time.
+- **Gift ideas (by Fri Nov 20).** The code is live but switched off until the Anthropic key is in
+  Vercel (section 2) and the site is redeployed. After that, Santas see suggestions based on their
+  giftee's answers; nobody needs to do anything except fill in the questionnaire. Check it with a
+  test person on the dry-run group before the real launch if you can.
+- **Reveal (exchange day).** The Reveal button is built and live. It only works on or after the
+  exchange date, so set that date correctly when you create the group.
 - **Clean-up after the holidays.** Delete the group if you want the data gone.
 
 ## Quick reference
