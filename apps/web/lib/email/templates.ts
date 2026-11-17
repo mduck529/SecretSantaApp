@@ -25,10 +25,13 @@ ${opts.paragraphs.map(p).join("\n")}
 </td></tr></table></td></tr></table></body></html>`;
 }
 
+/**
+ * Emails never name the giftee: the reveal happens when the person unwraps the
+ * present on their page. These inputs deliberately have no giftee name field.
+ */
 export interface MatchEmailInput {
   to: string;
   name: string;
-  giftee: string;
   groupName: string;
   budget: string;
   exchangeDate: string | null;
@@ -41,49 +44,55 @@ export interface MatchEmailInput {
 export function matchEmail(i: MatchEmailInput): OutgoingEmail {
   const when = i.exchangeDate ? ` We exchange gifts on <strong>${escape(i.exchangeDate)}</strong>.` : "";
   const answersLine = i.gifteeHasAnswers
-    ? `${escape(i.giftee)} has already filled out their questionnaire, so you can see what they'd love.`
-    : `${escape(i.giftee)} hasn't filled out their questionnaire yet. We'll email you as soon as they do.`;
-  const heading = i.changed ? "Your Secret Santa match has changed" : `You're ${escape(i.giftee)}'s Secret Santa!`;
+    ? `Good news: the person you're buying for has already filled out their questionnaire, so you can start getting to know them right away.`
+    : `The person you're buying for hasn't filled out their questionnaire yet. We'll email you as soon as they do.`;
+  const heading = i.changed ? "Your Secret Santa match has changed" : "Names have been drawn!";
   const intro = i.changed
-    ? `Hi ${escape(i.name)}, the ${escape(i.groupName)} matches were updated. You're now buying for <strong>${escape(i.giftee)}</strong>. Please disregard your earlier match.`
-    : `Hi ${escape(i.name)}, the names for <strong>${escape(i.groupName)}</strong> have been drawn. You're buying for <strong>${escape(i.giftee)}</strong>.`;
+    ? `Hi ${escape(i.name)}, the ${escape(i.groupName)} matches were updated, so you have someone new to buy for. Please disregard your earlier match. Your new match is wrapped up and waiting on your page.`
+    : `Hi ${escape(i.name)}, the names for <strong>${escape(i.groupName)}</strong> have been drawn. Your match is wrapped up and waiting for you. Open your page and unwrap the present to see who you're buying for.`;
   const paragraphs = [
     intro,
     `Budget: <strong>${escape(i.budget)}</strong>.${when}`,
     answersLine,
-    `<strong>Your turn:</strong> fill out your own questionnaire so your Secret Santa knows what you'd like. It takes about 5 minutes.`,
+    `<strong>Your turn:</strong> fill out your own questionnaire so your Secret Santa can get to know you. It takes about 5 minutes.`,
   ];
   return {
     to: i.to,
-    subject: i.changed ? `Your Secret Santa match has changed` : `🎁 You're ${i.giftee}'s Secret Santa`,
+    subject: i.changed ? `Your Secret Santa match has changed` : `🎁 Your Secret Santa match is ready to unwrap`,
     html: layout({
-      preheader: `You're buying for ${i.giftee}. Budget ${i.budget}.`,
+      preheader: `Names have been drawn for ${i.groupName}. Unwrap your match to see who you're buying for.`,
       heading,
       paragraphs,
-      button: { label: "See your match & fill out your questionnaire", url: i.link },
+      button: { label: i.changed ? "Unwrap my new match" : "Unwrap my match", url: i.link },
     }),
     text: [
-      i.changed ? `Your match has changed. You're now buying for ${i.giftee}.` : `You're ${i.giftee}'s Secret Santa!`,
+      i.changed
+        ? `Hi ${i.name}, your Secret Santa match has changed. Open your page to unwrap your new match.`
+        : `Hi ${i.name}, names have been drawn for ${i.groupName}! Open your page to unwrap your match.`,
       `Budget: ${i.budget}.${i.exchangeDate ? ` Exchange: ${i.exchangeDate}.` : ""}`,
-      i.gifteeHasAnswers ? `${i.giftee} has filled out their questionnaire.` : `${i.giftee} hasn't filled out their questionnaire yet; we'll email you when they do.`,
-      `Please fill out your own questionnaire too.`,
+      i.gifteeHasAnswers
+        ? `The person you're buying for has filled out their questionnaire.`
+        : `The person you're buying for hasn't filled out their questionnaire yet; we'll email you when they do.`,
+      `Please fill out your own questionnaire too, so your Secret Santa can get to know you.`,
       `Open: ${i.link}`,
       `Shh, keep it a secret.`,
     ].join("\n\n"),
   };
 }
 
-export function profileUpdatedEmail(i: { to: string; name: string; giftee: string; link: string }): OutgoingEmail {
+export function profileUpdatedEmail(i: { to: string; name: string; link: string }): OutgoingEmail {
   return {
     to: i.to,
-    subject: `${i.giftee} updated their Secret Santa questionnaire`,
+    subject: `The person you're buying for updated their questionnaire`,
     html: layout({
-      preheader: `See what ${i.giftee} would love.`,
-      heading: `${escape(i.giftee)} shared some gift hints`,
-      paragraphs: [`Hi ${escape(i.name)}, ${escape(i.giftee)} just updated their questionnaire. Take a look at what they'd love (and what to avoid).`],
-      button: { label: `See ${i.giftee}'s answers`, url: i.link },
+      preheader: `New hints about the person you're buying for.`,
+      heading: "Your giftee shared more about themselves",
+      paragraphs: [
+        `Hi ${escape(i.name)}, the person you're buying for just updated their questionnaire. Take a look to get to know them a little better (and see what to avoid).`,
+      ],
+      button: { label: "See their answers", url: i.link },
     }),
-    text: `Hi ${i.name}, ${i.giftee} just updated their questionnaire.\n\nSee their answers: ${i.link}\n\nShh, keep it a secret.`,
+    text: `Hi ${i.name}, the person you're buying for just updated their questionnaire.\n\nSee their answers: ${i.link}\n\nShh, keep it a secret.`,
   };
 }
 

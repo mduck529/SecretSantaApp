@@ -107,7 +107,8 @@ export function PersonView(p: PersonViewProps) {
         <p className="eyebrow">For your Secret Santa</p>
         <h2>Your questionnaire</h2>
         <p className="muted">
-          Only your Secret Santa can see this. {p.mine.complete ? "You can update it anytime." : "It takes about 5 minutes."}
+          Help your Secret Santa get to know you, so they can find a gift that really fits. Only they can see your answers.{" "}
+          {p.mine.complete ? "You can update it anytime." : "It takes about 5 minutes."}
         </p>
         <QuestionnaireWizard groupId={p.groupId} answers={p.mine.answers} complete={p.mine.complete} action={p.saveAction} />
       </section>

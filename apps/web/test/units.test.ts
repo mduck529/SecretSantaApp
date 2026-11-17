@@ -59,7 +59,6 @@ describe("email templates", () => {
   const base = {
     to: "bob@example.com",
     name: "Bob",
-    giftee: "Alice",
     groupName: "Family 2026",
     budget: "$100–$150",
     exchangeDate: "Friday, December 25",
@@ -67,10 +66,10 @@ describe("email templates", () => {
     link: "https://santa.example/auth/confirm?token_hash=x&next=%2Fg%2F1",
   };
 
-  it("tells the person who they're buying for and links to the questionnaire", () => {
+  it("invites the person to unwrap their match and links to the questionnaire", () => {
     const e = matchEmail(base);
-    expect(e.subject).toContain("Alice");
-    expect(e.html).toContain("Alice");
+    expect(e.subject).toBe("🎁 Your Secret Santa match is ready to unwrap");
+    expect(e.html).toContain("unwrap");
     expect(e.html).toContain("$100–$150");
     expect(e.html).toContain("fill out your own questionnaire");
     expect(e.html).toContain(base.link.replace(/&/g, "&amp;"));
@@ -82,15 +81,23 @@ describe("email templates", () => {
     expect(matchEmail({ ...base, gifteeHasAnswers: true }).text).toContain("has filled out");
   });
 
+  it("never names the giftee, so the unwrap stays a surprise", () => {
+    // The inputs have no giftee field; make sure nothing sneaks one through.
+    const sneaky = { ...base, giftee: "Alice" } as Parameters<typeof matchEmail>[0];
+    for (const e of [matchEmail(sneaky), matchEmail({ ...sneaky, changed: true }), profileUpdatedEmail({ to: "a@b.c", name: "Bob", link: "https://x" })]) {
+      expect(`${e.subject} ${e.html} ${e.text}`).not.toContain("Alice");
+    }
+  });
+
   it("uses 'changed' wording for updated matches", () => {
     expect(matchEmail({ ...base, changed: true }).subject).toBe("Your Secret Santa match has changed");
   });
 
   it("escapes names so they can't inject HTML", () => {
-    const e = matchEmail({ ...base, giftee: `<img src=x onerror=alert(1)>`, name: `"Bob"` });
+    const e = matchEmail({ ...base, name: `<img src=x onerror=alert(1)>` });
     expect(e.html).not.toContain("<img src=x");
     expect(e.html).toContain("&lt;img src=x onerror=alert(1)&gt;");
-    expect(profileUpdatedEmail({ to: "a@b.c", name: "<b>", giftee: "<i>", link: "https://x" }).html).not.toMatch(/<b>|<i>/);
+    expect(profileUpdatedEmail({ to: "a@b.c", name: "<b>", link: "https://x" }).html).not.toMatch(/<b>/);
     expect(reminderEmail({ to: "a@b.c", name: "<b>", groupName: "<i>", link: "https://x" }).html).not.toMatch(/<b>|<i>/);
   });
 });
