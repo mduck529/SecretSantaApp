@@ -4,7 +4,7 @@ const escape = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 /** Classic Cozy email: string-light dots, an evergreen header, a cream card and a cranberry button. */
-function layout(opts: { preheader: string; heading: string; paragraphs: string[]; button: { label: string; url: string }; footer?: string }) {
+function layout(opts: { preheader: string; heading: string; paragraphs: string[]; button?: { label: string; url: string }; footer?: string }) {
   const p = (html: string) => `<p style="margin:0 0 16px;font-size:16px;line-height:1.55;color:#2b2320">${html}</p>`;
   const bulbs = ["#a51c30", "#d9a93f", "#1f4d3a"];
   const lights = Array.from({ length: 13 }, (_, i) => `<td align="center" style="padding:0"><span style="display:inline-block;width:10px;height:14px;border-radius:5px 5px 6px 6px;background:${bulbs[i % 3]}"></span></td>`).join("");
@@ -20,7 +20,7 @@ function layout(opts: { preheader: string; heading: string; paragraphs: string[]
 <tr><td style="background:#fffaf2;border:1px solid #e2d2bb;border-top:0;border-radius:0 0 16px 16px;padding:28px 24px">
 <h1 style="margin:0 0 16px;font-family:${serif};font-size:26px;line-height:1.2;color:#a51c30">${opts.heading}</h1>
 ${opts.paragraphs.map(p).join("\n")}
-<p style="margin:26px 0"><a href="${escape(opts.button.url)}" style="display:inline-block;background:#a51c30;color:#fff7ea;text-decoration:none;font-weight:bold;font-size:16px;padding:14px 24px;border-radius:999px;border-bottom:4px solid #6e0f1e">${escape(opts.button.label)}</a></p>
+${opts.button ? `<p style="margin:26px 0"><a href="${escape(opts.button.url)}" style="display:inline-block;background:#a51c30;color:#fff7ea;text-decoration:none;font-weight:bold;font-size:16px;padding:14px 24px;border-radius:999px;border-bottom:4px solid #6e0f1e">${escape(opts.button.label)}</a></p>` : ""}
 <p style="margin:0;font-family:${serif};font-style:italic;font-size:15px;color:#6c5e52">${opts.footer ?? "Shh, keep it a secret."}</p>
 </td></tr></table></td></tr></table></body></html>`;
 }
@@ -80,7 +80,8 @@ export function matchEmail(i: MatchEmailInput): OutgoingEmail {
   };
 }
 
-export function profileUpdatedEmail(i: { to: string; name: string; link: string }): OutgoingEmail {
+export function profileUpdatedEmail(i: { to: string; name: string; link: string; newIdeas?: boolean }): OutgoingEmail {
+  const ideas = i.newIdeas ? " New gift ideas are ready too." : "";
   return {
     to: i.to,
     subject: `The person you're buying for updated their questionnaire`,
@@ -88,11 +89,11 @@ export function profileUpdatedEmail(i: { to: string; name: string; link: string 
       preheader: `New hints about the person you're buying for.`,
       heading: "Your giftee shared more about themselves",
       paragraphs: [
-        `Hi ${escape(i.name)}, the person you're buying for just updated their questionnaire. Take a look to get to know them a little better (and see what to avoid).`,
+        `Hi ${escape(i.name)}, the person you're buying for just updated their questionnaire. Take a look to get to know them a little better (and see what to avoid).${ideas}`,
       ],
       button: { label: "See their answers", url: i.link },
     }),
-    text: `Hi ${i.name}, the person you're buying for just updated their questionnaire.\n\nSee their answers: ${i.link}\n\nShh, keep it a secret.`,
+    text: `Hi ${i.name}, the person you're buying for just updated their questionnaire.${ideas}\n\nSee their answers: ${i.link}\n\nShh, keep it a secret.`,
   };
 }
 
@@ -111,5 +112,31 @@ export function reminderEmail(i: { to: string; name: string; groupName: string; 
       footer: "You can update your answers as often as you like.",
     }),
     text: `Hi ${i.name}, your Secret Santa in ${i.groupName} would love a few hints.\n\nFill out your questionnaire: ${i.link}`,
+  };
+}
+
+/** "a•••@example.com": enough to recognize your own address, not enough to harvest it. */
+export function maskEmail(email: string): string {
+  const at = email.lastIndexOf("@");
+  if (at < 1) return "•••";
+  return `${email[0]}•••${email.slice(at)}`;
+}
+
+/** Sent to someone's OLD address when the organizer changes their email after matching. No sign-in link. */
+export function emailChangedNotice(i: { to: string; name: string; groupName: string; newEmail: string }): OutgoingEmail {
+  const masked = maskEmail(i.newEmail);
+  return {
+    to: i.to,
+    subject: `Your Secret Santa email address was changed`,
+    html: layout({
+      preheader: `Your ${i.groupName} emails now go to ${masked}.`,
+      heading: "Your email address was changed",
+      paragraphs: [
+        `Hi ${escape(i.name)}, the organizer of <strong>${escape(i.groupName)}</strong> changed your email address to <strong>${escape(masked)}</strong>. Your Secret Santa emails will go there from now on.`,
+        `If you asked for this, there's nothing to do. If you didn't, please let the organizer know.`,
+      ],
+      footer: "This address won't get any more Secret Santa emails for this group.",
+    }),
+    text: `Hi ${i.name}, the organizer of ${i.groupName} changed your email address to ${masked}. Your Secret Santa emails will go there from now on.\n\nIf you didn't ask for this, please let the organizer know.`,
   };
 }

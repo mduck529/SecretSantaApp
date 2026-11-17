@@ -1,4 +1,4 @@
-import type { Answers } from "@santa/core";
+import type { Answers, GiftIdeas } from "@santa/core";
 import { PersonView } from "@/components/person-view";
 import { requireMember } from "@/lib/auth";
 import { familyPhoto } from "@/lib/family-photo";
@@ -13,7 +13,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
 
   const { data: group } = await supabase
     .from("groups")
-    .select("name, status, budget_min_cents, budget_max_cents, exchange_date")
+    .select("name, status, budget_min_cents, budget_max_cents, exchange_date, revealed_at")
     .eq("id", groupId)
     .single();
   if (!group) return null;
@@ -25,7 +25,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     .maybeSingle();
 
   // Only after the organizer presses Send. RLS returns only this person's own match.
-  let giftee: { id: string; name: string; answers: Answers | null } | null = null;
+  let giftee: { id: string; name: string; answers: Answers | null; ideas: GiftIdeas | null } | null = null;
   if (group.status === "sent") {
     const { data: match } = await supabase
       .from("assignments")
@@ -33,16 +33,32 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
       .eq("giver_id", membership.id)
       .maybeSingle();
     if (match) {
-      const [{ data: person }, { data: theirs }] = await Promise.all([
+      const [{ data: person }, { data: theirs }, { data: cached }] = await Promise.all([
         supabase.from("memberships").select("display_name").eq("id", match.receiver_id).single(),
         supabase.from("questionnaire_answers").select("answers").eq("membership_id", match.receiver_id).maybeSingle(),
+        // The signed-in client, not the service role: RLS shows this row only to the current Santa.
+        supabase.from("gift_suggestions").select("ideas").eq("receiver_id", match.receiver_id).maybeSingle(),
       ]);
       giftee = {
         id: match.receiver_id as string,
         name: person?.display_name ?? "your giftee",
         answers: (theirs?.answers as Answers) ?? null,
+        ideas: (cached?.ideas as GiftIdeas) ?? null,
       };
     }
+  }
+
+  // After the organizer reveals, Row Level Security lets every member read all matches.
+  let pairs: { id: string; giver: string; receiver: string }[] | null = null;
+  if (group.revealed_at) {
+    const [{ data: all }, { data: people }] = await Promise.all([
+      supabase.from("assignments").select("giver_id, receiver_id").eq("group_id", groupId),
+      supabase.from("memberships").select("id, display_name").eq("group_id", groupId),
+    ]);
+    const nameOf = new Map((people ?? []).map((p) => [p.id as string, p.display_name as string]));
+    pairs = (all ?? [])
+      .map((a) => ({ id: a.giver_id as string, giver: nameOf.get(a.giver_id) ?? "Someone", receiver: nameOf.get(a.receiver_id) ?? "someone" }))
+      .sort((a, b) => a.giver.localeCompare(b.giver));
   }
 
   return (
@@ -56,6 +72,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
       exchangeDate={group.exchange_date}
       photo={familyPhoto}
       giftee={giftee}
+      revealed={pairs}
       mine={{ answers: (mine?.answers as Answers) ?? {}, complete: Boolean(mine?.is_complete) }}
       saveAction={saveQuestionnaire}
     />

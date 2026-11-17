@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { StaticImageData } from "next/image";
-import type { Answers } from "@santa/core";
+import type { Answers, GiftIdeas } from "@santa/core";
 import type { FormAction } from "./action-form";
+import { GiftIdeasPanel } from "./gift-ideas";
 import { AnswersView } from "./questionnaire";
 import { QuestionnaireWizard } from "./questionnaire-wizard";
 import { Countdown } from "./festive/countdown";
@@ -23,7 +24,9 @@ export interface PersonViewProps {
   exchangeDate: string | null;
   photo: { image: StaticImageData; caption: string } | null;
   /** Null until the organizer presses Send. */
-  giftee: { id: string; name: string; answers: Answers | null } | null;
+  giftee: { id: string; name: string; answers: Answers | null; ideas: GiftIdeas | null } | null;
+  /** Everyone's matches, once the organizer reveals them after the exchange. */
+  revealed: { id: string; giver: string; receiver: string }[] | null;
   mine: { answers: Answers; complete: boolean };
   saveAction: FormAction;
 }
@@ -80,13 +83,7 @@ export function PersonView(p: PersonViewProps) {
                   </p>
                 </div>
               )}
-              <div className="ideas">
-                <h3>Gift ideas</h3>
-                <p className="muted">
-                  The elves are busy in the workshop. Personalized ideas for {gifteeName} (things to buy and things to
-                  make) are on their way.
-                </p>
-              </div>
+<GiftIdeasPanel ideas={p.giftee.ideas} name={gifteeName} hasAnswers={hasAnswers} />
             </div>
           </GiftReveal>
         ) : (
@@ -102,6 +99,24 @@ export function PersonView(p: PersonViewProps) {
           </div>
         )}
       </section>
+
+      {p.revealed ? (
+        <section id="reveal" className="card">
+          <p className="eyebrow">The big reveal</p>
+          <h2>Who had whom</h2>
+          <ul className="who-had-whom">
+            {p.revealed.map((r) => (
+              <li key={r.id}>
+                <strong>{r.giver}</strong>
+                <span className="arrow" aria-label="had">
+                  →
+                </span>
+                <span className="to">{r.receiver}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section id="questionnaire" className="card">
         <p className="eyebrow">For your Secret Santa</p>

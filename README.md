@@ -2,6 +2,7 @@
 
 Draw names with rules (no spouses, etc.), tell your Secret Santa what you'd love,
 and get gift ideas. Web first, iOS and Android later. See [`docs/PLAN.md`](docs/PLAN.md).
+Current status and the task queue: [`docs/TASKS.md`](docs/TASKS.md).
 
 ## Layout
 
@@ -11,6 +12,9 @@ and get gift ideas. Web first, iOS and Android later. See [`docs/PLAN.md`](docs/
 | `apps/web` | Next.js web app |
 | `supabase/migrations` | Database schema and privacy rules (Row Level Security) |
 | `supabase/tests` | Privacy tests run against plain Postgres |
+| `supabase/seed.sql` | Dry-run data: one test group, 12 people, 5 couples, a few questionnaires. Never run in production |
+| `docs/DRY-RUN.md` | Checklist for the pre-launch dry run with a throwaway group |
+| Email | Gmail SMTP through Nodemailer (`SMTP_*` settings; leave `SMTP_PASS` empty to print emails to the server log) |
 
 ## Privacy rules (enforced in the database)
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { Answers } from "@santa/core";
+import type { Answers, GiftIdeas } from "@santa/core";
 import { AdminView, type AdminMember } from "@/components/admin-view";
 import { PersonView } from "@/components/person-view";
 import { familyPhoto } from "@/lib/family-photo";
@@ -13,6 +13,7 @@ import { previewSave } from "./actions";
  *   /dev/preview?view=match        match sent, giftee has answers
  *   /dev/preview?view=match-empty  match sent, giftee hasn't answered yet
  *   /dev/preview?view=waiting      names not drawn yet
+ *   /dev/preview?view=revealed     after the organizer reveals who had whom
  *   /dev/preview?view=admin        organizer page (after Send)
  *   /dev/preview?view=admin-draft  organizer page (before Match)
  */
@@ -34,6 +35,41 @@ const SUE: Answers = {
   shoe_size: "US women's 7.5",
   allergies: "Tree nuts",
   wishlist: "https://www.amazon.com/hz/wishlist/ls/EXAMPLE123\nhttps://www.etsy.com/listing/1234/handmade-pottery-tools",
+};
+
+const IDEAS: GiftIdeas = {
+  retail: [
+    {
+      title: "Beginner pottery tool set",
+      reason: "She just started pottery and loves working with her hands.",
+      based_on: "hobbies",
+      estimated_price_usd: 45,
+      search_keywords: "pottery tool kit wooden",
+      best_shop: "etsy",
+      is_experience: false,
+    },
+    {
+      title: "Lavender garden starter kit",
+      reason: "Combines her love of gardening and lavender.",
+      based_on: "loves",
+      estimated_price_usd: 60,
+      search_keywords: "lavender seed starter kit",
+      best_shop: "amazon",
+      is_experience: false,
+    },
+  ],
+  diy: [
+    {
+      title: "Hand-blended Earl Grey tea tin",
+      reason: "Earl Grey is her favorite; add dried lavender for a personal twist.",
+      based_on: "treats",
+      estimated_cost_usd: 25,
+      materials: ["Loose Earl Grey", "Dried culinary lavender", "Tea tin", "Label"],
+      how_to: "Mix 4 parts tea to 1 part lavender, fill the tin and hand-letter a label.",
+      difficulty: "easy",
+      time_needed: "under_1_hour",
+    },
+  ],
 };
 
 const MINE: Answers = { hobbies: "Woodworking and pickleball", loves: "Coffee, flannel, anything smoked", shirt_size: "L" };
@@ -76,6 +112,7 @@ export default async function PreviewPage({ searchParams }: { searchParams: Prom
             budget_max_cents: 15000,
             exchange_date: "2026-12-24",
             sent_at: draft ? null : "2026-11-20T19:30:00Z",
+            revealed_at: null,
           }}
           members={MEMBERS}
           phones={{ [MEMBERS[0]!.id]: "+15555550123" }}
@@ -103,7 +140,14 @@ export default async function PreviewPage({ searchParams }: { searchParams: Prom
         giftee={
           view === "waiting"
             ? null
-            : { id: MEMBERS[1]!.id, name: "Aunt Sue", answers: view === "match-empty" ? null : SUE }
+            : view === "match-empty"
+              ? { id: MEMBERS[1]!.id, name: "Aunt Sue", answers: null, ideas: null }
+              : { id: MEMBERS[1]!.id, name: "Aunt Sue", answers: SUE, ideas: IDEAS }
+        }
+        revealed={
+          view === "revealed"
+            ? MEMBERS.map((m, i) => ({ id: m.id, giver: m.display_name, receiver: MEMBERS[(i + 1) % MEMBERS.length]!.display_name }))
+            : null
         }
         mine={{ answers: MINE, complete: false }}
         saveAction={previewSave}
@@ -113,7 +157,7 @@ export default async function PreviewPage({ searchParams }: { searchParams: Prom
 }
 
 function PreviewNav() {
-  const views = ["match", "match-empty", "waiting", "admin", "admin-draft"];
+  const views = ["match", "match-empty", "waiting", "revealed", "admin", "admin-draft"];
   return (
     <nav className="toggles" style={{ padding: "0.5rem 16px" }} aria-label="Preview screens">
       {views.map((v) => (

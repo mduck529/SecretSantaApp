@@ -42,9 +42,12 @@ insert into auth.users values
 set client_min_messages = notice;
 
 -- Organizer creates the group and enters the roster with a rule.
+select public.create_group_as('00000000-0000-0000-0000-00000000000a', 'Org@Example.com', 'Family 2026', 'Org') as gid \gset
 set role authenticated;
 select tests.login('org');
-select public.create_group('Family 2026', 'Org') as gid \gset
+select tests.fails($$select public.create_group_as(auth.uid(), 'org@example.com', 'Mine', 'Org')$$,
+  'signed-in users cannot create groups directly');
+select tests.eq((select role from public.memberships), 'organizer', 'creator is the organizer (email lowercased, account linked)');
 select tests.eq((select budget_min_cents from public.groups), 10000, 'default budget min $100');
 select tests.eq((select budget_max_cents from public.groups), 15000, 'default budget max $150');
 select tests.fails($$insert into public.memberships (group_id, display_name, email)
@@ -114,6 +117,12 @@ insert into public.questionnaire_answers (membership_id, answers, is_complete)
 select tests.fails($$insert into public.questionnaire_answers (membership_id, answers)
   select id, '{}' from public.memberships where email = 'alice@example.com'$$, 'bob cannot write alice''s answers');
 select tests.eq((select count(*) from public.questionnaire_answers), 1::bigint, 'bob reads his own answers');
+-- Saving again is a plain UPDATE of answers and is_complete (what the app does). An upsert
+-- would also set membership_id, which members have no privilege to change.
+update public.questionnaire_answers set answers = '{"hobbies": "fishing", "loves": "coffee"}', is_complete = true
+  where membership_id = (select id from public.memberships where email = 'bob@example.com');
+select tests.eq((select answers->>'loves' from public.questionnaire_answers), 'coffee', 'bob can update his own answers');
+select tests.fails($$update public.questionnaire_answers set membership_id = membership_id$$, 'bob cannot update membership_id');
 
 select tests.login('carol');
 select tests.eq((select answers->>'hobbies' from public.questionnaire_answers), 'fishing', 'carol (bob''s Santa) reads bob''s answers');
@@ -134,21 +143,109 @@ select tests.eq((select count(*) from public.questionnaire_answers), 0::bigint, 
 select tests.eq((select phone from public.member_contacts), '+15555550123', 'alice sees her own phone number');
 select tests.eq((select count(*) from public.assignments), 1::bigint, 'alice sees exactly one match');
 
+-- Security review M-2: the roster's email bookkeeping would show whose match changed after an
+-- add or remove, so members (organizer included) read only the columns the app needs.
+reset role;
+update public.memberships set match_email_status = 'sent', match_email_sent_at = now(), match_email_retry = true
+  where email = 'carol@example.com';
+set role authenticated;
+select tests.login('alice');
+select tests.fails($$select match_email_sent_at from public.memberships$$, 'members cannot read match_email_sent_at');
+select tests.fails($$select match_email_retry from public.memberships$$, 'members cannot read match_email_retry');
+select tests.fails($$select questionnaire_updated_at from public.memberships$$, 'members cannot read questionnaire_updated_at');
+select tests.fails($$select last_reminded_at from public.memberships$$, 'members cannot read last_reminded_at');
+select tests.fails($$select * from public.memberships$$, 'members cannot select every roster column');
+select tests.fails($$select count(*) from public.memberships where match_email_sent_at is not null$$,
+  'members cannot filter on match_email_sent_at');
+select tests.fails($$select count(*) from public.memberships order by max(match_email_sent_at)$$,
+  'members cannot sort on match_email_sent_at');
+select tests.fails($$select count(*) from public.memberships where match_email_retry$$,
+  'members cannot filter on match_email_retry');
+select tests.fails($$select to_jsonb(m) from public.memberships m$$, 'members cannot read a whole roster row as json');
+-- What the app reads with a member's session still works.
+select tests.eq((select display_name from public.memberships where email = 'alice@example.com' and user_id = auth.uid()),
+  'Alice', 'requireMember columns readable');
+select tests.eq((select role from public.memberships where group_id = :'gid' and user_id = auth.uid()),
+  'member', 'requireMember filters readable');
+select tests.eq((select display_name from public.memberships where id = (select receiver_id from public.assignments)),
+  'Carol', 'person page reads their giftee''s name');
+select tests.eq((select phone from public.member_contacts), '+15555550123', 'contacts policy still reads the roster');
+select tests.login('org');
+select tests.fails($$select match_email_sent_at from public.memberships$$, 'organizer cannot read match_email_sent_at');
+select tests.fails($$select match_email_retry from public.memberships$$, 'organizer cannot read match_email_retry');
+select tests.eq((select count(*) from (
+    select id, display_name, email, role, user_id, questionnaire_complete, match_email_status
+    from public.memberships where group_id = :'gid' order by created_at) dashboard), 4::bigint,
+  'organizer dashboard columns readable');
+select tests.eq((select match_email_status from public.memberships where email = 'carol@example.com'), 'sent',
+  'organizer still sees the visible email status');
+reset role;
+select tests.eq((select match_email_retry from public.memberships where email = 'alice@example.com'), false,
+  'match_email_retry defaults to false');
+select tests.eq((select count(*) from information_schema.column_privileges
+    where table_schema = 'public' and table_name = 'memberships' and grantee = 'anon'), 0::bigint,
+  'anon has no roster columns');
+select tests.eq((select string_agg(column_name, ',' order by column_name) from information_schema.column_privileges
+    where table_schema = 'public' and table_name = 'memberships' and grantee = 'authenticated' and privilege_type = 'SELECT'),
+  'created_at,display_name,email,group_id,id,match_email_status,questionnaire_complete,role,user_id',
+  'authenticated reads exactly the listed roster columns');
+update public.memberships set match_email_status = 'not_sent', match_email_sent_at = null, match_email_retry = false
+  where email = 'carol@example.com';
+set role authenticated;
+
 select tests.login('outsider');
 select tests.eq((select count(*) from public.groups), 0::bigint, 'outsider sees no groups');
 select tests.eq((select count(*) from public.memberships), 0::bigint, 'outsider sees no roster');
 select tests.eq((select count(*) from public.assignments), 0::bigint, 'outsider sees no matches');
 reset role;
 
+-- Gift ideas: the server caches ideas for bob. Only bob's Santa (carol) may read them.
+insert into public.gift_suggestions
+  (receiver_id, ideas, answers_updated_at, budget_min_cents, budget_max_cents, model, prompt_version)
+  select m.id, '{"retail": [], "diy": []}', m.questionnaire_updated_at, 10000, 15000, 'test-model', 'test'
+  from public.memberships m where m.email = 'bob@example.com';
+select tests.fails($$insert into public.gift_suggestions (receiver_id, ideas, budget_min_cents, budget_max_cents, model, prompt_version)
+  select id, '[]', 0, 0, 'm', 'v' from public.memberships where email = 'alice@example.com'$$, 'gift ideas must be a JSON object');
+set role authenticated;
+select tests.login('carol');
+select tests.eq((select count(*) from public.gift_suggestions), 1::bigint, 'carol (bob''s Santa) reads bob''s gift ideas');
+select tests.fails($$insert into public.gift_suggestions (receiver_id, ideas, budget_min_cents, budget_max_cents, model, prompt_version)
+  select id, '{}', 0, 0, 'm', 'v' from public.memberships where email = 'alice@example.com'$$, 'members cannot write gift ideas');
+select tests.fails($$update public.gift_suggestions set model = 'x'$$, 'Santa cannot change gift ideas');
+select tests.fails($$delete from public.gift_suggestions$$, 'Santa cannot delete gift ideas');
+select tests.login('bob');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'bob cannot read his own gift ideas (they are a surprise)');
+select tests.login('org');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'organizer cannot read gift ideas');
+select tests.fails($$delete from public.gift_suggestions$$, 'organizer cannot delete gift ideas');
+select tests.login('alice');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'alice (not bob''s Santa) cannot read bob''s gift ideas');
+select tests.login('outsider');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'outsider cannot read gift ideas');
+reset role;
+select tests.eq(has_table_privilege('anon', 'public.gift_suggestions', 'select'), false,
+  'signed-out visitors cannot read gift ideas');
+select tests.eq(has_table_privilege('authenticated', 'public.gift_suggestions', 'insert, update, delete, truncate'), false,
+  'signed-in users have no write access to gift ideas');
+
 select tests.eq((select count(*) from public.profile_notifications), 1::bigint, 'bob''s edit queued one notification');
 select tests.eq(public.reset_unsent_match(:'gid'), true, 'unsent match can be cleared by the server');
 select tests.eq((select count(*) from public.assignments), 0::bigint, 'clearing removes matches');
+set role authenticated;
+select tests.login('carol');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'without a match, carol no longer sees bob''s gift ideas');
+reset role;
+update public.memberships set match_email_status = 'sent', match_email_sent_at = now();
 select public.save_assignments(:'gid', (
   select jsonb_agg(jsonb_build_object('giver', g.id, 'receiver', r.id))
   from (values ('org','alice'), ('alice','carol'), ('carol','bob'), ('bob','org')) v(gn, rn)
   join public.memberships g on g.email = v.gn || '@example.com'
   join public.memberships r on r.email = v.rn || '@example.com'
 ), 'redraw', null);
+select tests.eq((select count(*) from public.memberships where group_id = :'gid' and match_email_status <> 'not_sent'), 0::bigint,
+  'a new draw resets everyone to "not emailed yet"');
+select tests.eq((select count(*) from public.memberships where group_id = :'gid' and match_email_sent_at is not null), 4::bigint,
+  'but remembers who had an earlier match email');
 update public.groups set status = 'sent' where id = :'gid';
 select tests.eq(public.reset_unsent_match(:'gid'), false, 'a sent match is never silently cleared');
 select tests.eq((select count(*) from public.audit_log where action = 'draw'), 1::bigint, 'draw is audited');
@@ -164,11 +261,51 @@ select tests.eq((select user_id from public.memberships where email = 'carol.new
   'email change detaches the old login');
 reset role;
 
--- After the exchange the organizer turns on reveal; then everyone sees all matches.
-update public.groups set revealed_at = now();
+-- Reveal is server-only and gated by the exchange date (group is "sent" from here).
+-- Put the date in the future first (as the server would).
+update public.groups set exchange_date = (now() at time zone 'America/New_York')::date + 7;
+set role authenticated;
+select tests.login('org');
+select tests.fails($$update public.groups set revealed_at = now()$$, 'organizer cannot reveal from the client');
+select tests.fails($$update public.groups set status = 'sent'$$, 'organizer cannot set status');
+select tests.fails($$update public.groups set exchange_date = (now() at time zone 'America/New_York')::date - 1$$,
+  'organizer cannot move the date into the past after Send');
+select tests.eq((select count(*) from public.assignments), 1::bigint, 'organizer sees exactly one match before reveal');
+reset role;
+select tests.fails(format($$update public.groups set revealed_at = now() where id = %L$$, :'gid'),
+  'trigger blocks reveal before the date, even for the server');
+select tests.eq(public.reveal_group(:'gid', (select user_id from public.memberships where email = 'org@example.com')),
+  'too_early', 'server cannot reveal before the date');
+select tests.fails(format($$select public.reveal_group(%L, (select user_id from public.memberships where email = 'alice@example.com'))$$, :'gid'),
+  'a non-organizer cannot reveal');
+select tests.eq((select count(*) from public.audit_log where action = 'revealed'), 0::bigint, 'no reveal audit yet');
+
+-- On the exchange day the server reveals once, with an audit row; then everyone sees all matches.
+-- (Simulate time passing: skip the guard trigger for this setup step only.)
+set session_replication_role = replica;
+update public.groups set exchange_date = (now() at time zone 'America/New_York')::date;
+set session_replication_role = origin;
+select tests.eq(public.reveal_group(:'gid', (select user_id from public.memberships where email = 'org@example.com')),
+  'ok', 'server reveals on the exchange date');
+select tests.eq(public.reveal_group(:'gid', (select user_id from public.memberships where email = 'org@example.com')),
+  'already', 'second reveal does nothing');
+select tests.eq((select count(*) from public.audit_log where action = 'revealed'), 1::bigint, 'reveal is audited once');
 set role authenticated;
 select tests.login('alice');
 select tests.eq((select count(*) from public.assignments), 4::bigint, 'after reveal everyone sees all matches');
+select tests.login('bob');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'after reveal bob still cannot read his gift ideas');
+select tests.login('org');
+select tests.eq((select count(*) from public.gift_suggestions), 0::bigint, 'after reveal the organizer still cannot read gift ideas');
 reset role;
+
+-- Gift generation log: server only, and it holds no member data.
+set role authenticated;
+select tests.login('org');
+select tests.fails($$select count(*) from public.gift_generation_log$$, 'the organizer cannot read the gift generation log');
+select tests.fails($$insert into public.gift_generation_log (ok) values (true)$$, 'clients cannot write the gift generation log');
+reset role;
+select tests.eq((select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'gift_generation_log'
+  and column_name not in ('id', 'created_at', 'ok')), 0::bigint, 'the gift generation log has no columns that could identify anyone');
 
 \echo 'ALL RLS TESTS PASSED'

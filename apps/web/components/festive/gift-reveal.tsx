@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Present } from "./present";
 import { burst, jingle, sleighBells } from "./effects";
 import { SoundToggle } from "./toggles";
 
 type Phase = "wrapped" | "shake" | "open" | "shown";
+
+function readUnwrapped(key: string) {
+  try {
+    return window.localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+const noSubscribe = () => () => {};
 
 /**
  * The match reveal. The first time someone sees a given match they unwrap a present;
@@ -14,17 +23,19 @@ type Phase = "wrapped" | "shake" | "open" | "shown";
  * with a button to unwrap it again.
  */
 export function GiftReveal({ storageKey, gifteeName, children }: { storageKey: string; gifteeName: string; children: ReactNode }) {
-  const [phase, setPhase] = useState<Phase>("wrapped");
+  // Whether this device already unwrapped this match (false while rendering on the server).
+  const unwrappedBefore = useSyncExternalStore(noSubscribe, () => readUnwrapped(storageKey), () => false);
+  // Null until the person interacts; until then the stored flag decides.
+  const [chosen, setChosen] = useState<Phase | null>(null);
+  const phase: Phase = chosen ?? (unwrappedBefore ? "shown" : "wrapped");
+  const setPhase = setChosen;
   const stage = useRef<HTMLDivElement>(null);
   const timers = useRef<number[]>([]);
 
   useEffect(() => {
-    try {
-      if (window.localStorage.getItem(storageKey) === "1") setPhase("shown");
-    } catch {}
     const pending = timers.current;
     return () => pending.forEach((t) => window.clearTimeout(t));
-  }, [storageKey]);
+  }, []);
 
   const unwrap = () => {
     if (phase !== "wrapped") return;

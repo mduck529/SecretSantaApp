@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ActionForm, SubmitButton } from "./action-form";
 import { Ornament } from "./festive/ornament";
 import { Wreath } from "./festive/wreath";
+import { checkReveal } from "@/lib/reveal";
 import {
   addPersonAction,
   addRuleAction,
@@ -10,6 +11,7 @@ import {
   removePersonAction,
   removeRuleAction,
   resendAction,
+  revealAction,
   sendAction,
   settingsAction,
   updatePersonAction,
@@ -36,6 +38,7 @@ export interface AdminViewProps {
     budget_max_cents: number;
     exchange_date: string | null;
     sent_at: string | null;
+    revealed_at: string | null;
   };
   members: AdminMember[];
   phones: Record<string, string>;
@@ -49,6 +52,7 @@ export interface AdminViewProps {
 export function AdminView({ groupId, group, members, phones, rules }: AdminViewProps) {
   const nameOf = new Map(members.map((m) => [m.id, m.display_name]));
   const status = group.status;
+  const reveal = checkReveal({ status, exchange_date: group.exchange_date, revealed_at: group.revealed_at });
   const done = members.filter((m) => m.questionnaire_complete).length;
   const incomplete = members.length - done;
   const enough = members.length >= 3;
@@ -293,13 +297,13 @@ export function AdminView({ groupId, group, members, phones, rules }: AdminViewP
           <p>
             <strong>Sent ✓</strong>{" "}
             {group.sent_at ? new Date(group.sent_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : ""}.
-            Everyone got an email with who they&apos;re buying for and a link to fill out their questionnaire.
+            Everyone got an email inviting them to unwrap their match and fill out their questionnaire.
           </p>
         ) : (
           <>
             <p className="muted">
-              Emails everyone their match plus a link to fill out their own questionnaire. Questionnaires don&apos;t need to
-              be done first.
+              Emails everyone a link to unwrap their match and fill out their own questionnaire. The email doesn&apos;t say
+              who they have, and questionnaires don&apos;t need to be done first.
             </p>
             <ActionForm action={sendAction} celebrate confirm={`Send match emails to all ${members.length} people now?`}>
               {gid}
@@ -316,6 +320,38 @@ export function AdminView({ groupId, group, members, phones, rules }: AdminViewP
           </>
         )}
       </section>
+
+      {/* Reveal, after the exchange */}
+      {status === "sent" ? (
+        <section className="card">
+          <p className="eyebrow">Step 4 · After the exchange</p>
+          <h2>Reveal who had whom</h2>
+          {group.revealed_at ? (
+            <p>
+              <strong>Revealed ✓</strong> Everyone can see who had whom on their page.
+            </p>
+          ) : (
+            <>
+              <p className="muted">
+                After the exchange, show everyone who had whom. This can&apos;t be undone, and matches can&apos;t be
+                changed afterwards. {reveal.ok ? "" : reveal.message}
+              </p>
+              <ActionForm action={revealAction} celebrate confirm="Reveal who had whom to everyone in the group? This can't be undone.">
+                {gid}
+                {reveal.ok ? (
+                  <SubmitButton className="primary" pendingText="Revealing…">
+                    Reveal who had whom
+                  </SubmitButton>
+                ) : (
+                  <button type="button" disabled>
+                    Reveal who had whom
+                  </button>
+                )}
+              </ActionForm>
+            </>
+          )}
+        </section>
+      ) : null}
 
       {/* Reminders */}
       <section className="card reminders">

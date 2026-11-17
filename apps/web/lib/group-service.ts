@@ -12,8 +12,10 @@ import {
 } from "@santa/core";
 import { createAdminClient } from "./supabase/admin";
 import { signInLink } from "./links";
+import { refreshGiftIdeas } from "./gifts";
 import { sendEmails, type OutgoingEmail } from "./email/send";
-import { matchEmail, profileUpdatedEmail, reminderEmail } from "./email/templates";
+import { checkReveal, todayInEastern } from "./reveal";
+import { emailChangedNotice, matchEmail, profileUpdatedEmail, reminderEmail } from "./email/templates";
 
 /**
  * Organizer actions. This module reads matches with the service role so it can
@@ -36,6 +38,7 @@ interface Group {
   budget_min_cents: number;
   budget_max_cents: number;
   exchange_date: string | null;
+  revealed_at: string | null;
 }
 
 interface Member {
@@ -44,6 +47,7 @@ interface Member {
   email: string;
   role: string;
   questionnaire_updated_at: string | null;
+  match_email_sent_at: string | null;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -67,7 +71,7 @@ async function assertAdmin(db: Db, groupId: string, actorUserId: string) {
 async function loadGroup(db: Db, groupId: string): Promise<Group> {
   const { data, error } = await db
     .from("groups")
-    .select("id, name, status, budget_min_cents, budget_max_cents, exchange_date")
+    .select("id, name, status, budget_min_cents, budget_max_cents, exchange_date, revealed_at")
     .eq("id", groupId)
     .single();
   if (error) throw error;
@@ -77,7 +81,7 @@ async function loadGroup(db: Db, groupId: string): Promise<Group> {
 async function loadMembers(db: Db, groupId: string): Promise<Member[]> {
   const { data, error } = await db
     .from("memberships")
-    .select("id, display_name, email, role, questionnaire_updated_at")
+    .select("id, display_name, email, role, questionnaire_updated_at, match_email_sent_at")
     .eq("group_id", groupId)
     .order("created_at");
   if (error) throw error;
@@ -200,6 +204,7 @@ export async function addMember(
     const email = normalizeEmail(input.email);
     const phone = normalizePhone(input.phone);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so the roster can't change." };
 
     const { data: inserted, error } = await db
       .from("memberships")
@@ -220,17 +225,31 @@ export async function addMember(
     }
     if (group.status === "sent") {
       // Splice the newcomer into the existing loop; only one other person's match changes.
-      const result = addParticipant(await loadAssignments(db, groupId), memberId, {
-        exclusions: await loadExclusions(db, groupId),
-      });
-      if (!result.ok) {
-        return { ok: true, message: `Added ${name}, but they don't have a match yet. Re-match everyone to include them.` };
+      // Never leave someone on the roster without a match: undo the insert if they can't be fitted in.
+      const undo = () => db.from("memberships").delete().eq("id", memberId).eq("group_id", groupId);
+      let result;
+      try {
+        result = addParticipant(await loadAssignments(db, groupId), memberId, {
+          exclusions: await loadExclusions(db, groupId),
+        });
+        if (result.ok) await saveAssignments(db, groupId, result.assignments, "member_added", actorUserId);
+      } catch (err) {
+        await undo();
+        throw err;
       }
-      await saveAssignments(db, groupId, result.assignments, "member_added", actorUserId);
-      const sent = await emailMatches(db, group, result.changedGivers, { changedIds: result.changedGivers.filter((g) => g !== memberId) });
+      if (!result.ok) {
+        await undo();
+        return {
+          ok: false,
+          message: `Couldn't fit ${name} in without changing everyone's match. To include them, press Re-match, add them, then Send again.`,
+        };
+      }
+      // Whose match changed is secret: their delivery result must stay match-blind (security review M-3).
+      const others = result.changedGivers.filter((g) => g !== memberId);
+      const sent = await emailMatches(db, group, result.changedGivers, { changedIds: others, blindIds: others });
       return {
         ok: true,
-        message: `Added ${name} and sent them their match. One other person's match changed and they've been emailed.${sent.failedNote}`,
+        message: addedAfterSendMessage(name, { newcomerFailed: sent.failed.length > 0, othersFailed: sent.blindFailed }),
       };
     }
     return { ok: true, message: `Added ${name}.` };
@@ -252,9 +271,10 @@ export async function updateMember(
     const email = normalizeEmail(input.email);
     const phone = normalizePhone(input.phone);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so the roster can't change." };
     const { data: before } = await db
       .from("memberships")
-      .select("email")
+      .select("email, display_name")
       .eq("id", memberId)
       .eq("group_id", groupId)
       .single();
@@ -268,8 +288,15 @@ export async function updateMember(
     await savePhone(db, memberId, phone);
     const emailChanged = before.email !== email;
     await audit(db, groupId, actorUserId, "member_updated", { email_changed: emailChanged });
-    if (emailChanged && group.status === "sent") {
-      return { ok: true, message: `Saved. Their email changed, so press "Resend" to send their match to the new address.` };
+    if (emailChanged && group.status !== "draft") {
+      // Matches exist, so a changed address could be used to read someone's match. Tell the old address.
+      const [told] = await sendEmails([
+        emailChangedNotice({ to: before.email as string, name: before.display_name as string, groupName: group.name, newEmail: email }),
+      ]);
+      const toldNote = told ? " We let their old address know about the change." : "";
+      return group.status === "sent"
+        ? { ok: true, message: `Saved. Their email changed, so press "Resend match email" to send their match to the new address.${toldNote}` }
+        : { ok: true, message: `Saved.${toldNote}` };
     }
     return { ok: true, message: "Saved." };
   } catch (err) {
@@ -282,6 +309,7 @@ export async function removeMember(groupId: string, actorUserId: string, memberI
   try {
     await assertAdmin(db, groupId, actorUserId);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so the roster can't change." };
     const { data: member } = await db
       .from("memberships")
       .select("display_name, role")
@@ -295,6 +323,13 @@ export async function removeMember(groupId: string, actorUserId: string, memberI
       const result = removeParticipant(await loadAssignments(db, groupId), memberId, {
         exclusions: await loadExclusions(db, groupId),
       });
+      if (!result.ok && result.reason === "not_in_draw") {
+        // They never had a match, so nobody else is affected.
+        const { error } = await db.from("memberships").delete().eq("id", memberId).eq("group_id", groupId);
+        if (error) throw error;
+        await audit(db, groupId, actorUserId, "member_removed");
+        return { ok: true, message: `Removed ${member.display_name}.` };
+      }
       if (!result.ok) {
         return {
           ok: false,
@@ -302,11 +337,13 @@ export async function removeMember(groupId: string, actorUserId: string, memberI
         };
       }
       await saveAssignments(db, groupId, result.assignments, "member_removed", actorUserId, memberId);
-      const sent = await emailMatches(db, group, result.changedGivers, { changedIds: result.changedGivers });
-      const n = result.changedGivers.length;
+      const sent = await emailMatches(db, group, result.changedGivers, {
+        changedIds: result.changedGivers,
+        blindIds: result.changedGivers,
+      });
       return {
         ok: true,
-        message: `Removed ${member.display_name}. ${n === 1 ? "One person" : `${n} people`} got a new match by email.${sent.failedNote}`,
+        message: removedAfterSendMessage(member.display_name as string, result.changedGivers.length, sent.blindFailed),
       };
     }
 
@@ -376,6 +413,10 @@ export async function updateSettings(
     }
     const date = input.exchangeDate.trim() || null;
     if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, message: "Please pick a valid date." };
+    const group = await loadGroup(db, groupId);
+    if (date && date !== group.exchange_date && group.status !== "draft" && date <= todayInEastern()) {
+      return { ok: false, message: "Matches are already out, so the exchange date can only move to a future day." };
+    }
     const { error } = await db
       .from("groups")
       .update({ name, budget_min_cents: min, budget_max_cents: max, exchange_date: date })
@@ -383,6 +424,29 @@ export async function updateSettings(
     if (error) throw error;
     await audit(db, groupId, actorUserId, "settings_updated");
     return { ok: true, message: "Settings saved." };
+  } catch (err) {
+    return asOutcome(err);
+  }
+}
+
+/**
+ * The Reveal button. Opens only on/after the exchange date, once matches were sent.
+ * Setting revealed_at lets every member read all matches through Row Level Security.
+ * Returns a plain message only.
+ */
+export async function revealMatches(groupId: string, actorUserId: string): Promise<Outcome> {
+  const db = createAdminClient();
+  try {
+    await assertAdmin(db, groupId, actorUserId);
+    const group = await loadGroup(db, groupId);
+    const check = checkReveal(group);
+    if (!check.ok) return { ok: false, message: check.message };
+    // One database call checks, claims and audits together, so two clicks record one reveal.
+    const { data, error } = await db.rpc("reveal_group", { gid: groupId, actor: actorUserId });
+    if (error) throw error;
+    if (data === "already") return { ok: false, message: "Already revealed. Everyone can see who had whom." };
+    if (data !== "ok") return { ok: false, message: "Reveal isn't open yet. Check the exchange date." };
+    return { ok: true, message: "Revealed 🎁 Everyone can now see who had whom on their page." };
   } catch (err) {
     return asOutcome(err);
   }
@@ -422,6 +486,7 @@ export async function matchGroup(
   try {
     await assertAdmin(db, groupId, actorUserId);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so they can't be changed." };
     if (group.status === "sent" && !confirmedAfterSend) {
       return { ok: false, message: "Matches were already sent. Confirm to re-match; then press Send so everyone gets their new match." };
     }
@@ -449,16 +514,68 @@ export async function matchGroup(
   }
 }
 
+/** What to write to `memberships` after a batch of match emails. See {@link planDeliveryUpdates}. */
+export interface DeliveryPlan {
+  /** Organizer can see these: status "sent", sent_at now, retry cleared. */
+  sent: string[];
+  /** Organizer can see these: status "failed", retry cleared (the organizer fixes and resends). */
+  failed: string[];
+  /** Match-blind: sent_at now and retry cleared, but the visible status is left exactly as it was. */
+  blindSent: string[];
+  /** Match-blind: only the server-only retry flag is set; the daily cron tries again. */
+  blindFailed: string[];
+}
+
 /**
- * Emails each listed giver their match. Reads pairings internally; returns only counts.
+ * Splits delivery results into database updates. A "blind" person is one whose match just changed
+ * because someone else was added or removed. Anything the organizer (or any member) can read about
+ * them, such as the "Email failed" badge or a status flipping from failed to sent, would show who
+ * is the newcomer's Santa or who was buying for the person removed. So for blind people only
+ * server-only columns change (security review M-2, M-3).
+ */
+export function planDeliveryUpdates(ids: readonly string[], delivered: readonly boolean[], blindIds: readonly string[] = []): DeliveryPlan {
+  const blind = new Set(blindIds);
+  const plan: DeliveryPlan = { sent: [], failed: [], blindSent: [], blindFailed: [] };
+  ids.forEach((id, i) => {
+    const ok = delivered[i] === true;
+    if (blind.has(id)) (ok ? plan.blindSent : plan.blindFailed).push(id);
+    else (ok ? plan.sent : plan.failed).push(id);
+  });
+  return plan;
+}
+
+/** Result message for adding someone after Send. Names only the newcomer, never whose match changed. */
+export function addedAfterSendMessage(name: string, { newcomerFailed, othersFailed }: { newcomerFailed: boolean; othersFailed: number }): string {
+  const first = newcomerFailed
+    ? `Added ${name}, but we couldn't email them their match. Check their address and press "Resend match email".`
+    : `Added ${name} and sent them their match.`;
+  const second = othersFailed
+    ? " One other person's match changed. That email didn't go through, so we'll try again automatically."
+    : " One other person's match changed and they've been emailed.";
+  return first + second;
+}
+
+/** Result message for removing someone after Send. Counts only, never names. */
+export function removedAfterSendMessage(name: string, changed: number, failed: number): string {
+  const who = changed === 1 ? "One person" : `${changed} people`;
+  if (!failed) return `Removed ${name}. ${who} got a new match by email.`;
+  const emails = failed === 1 ? "One email" : `${failed} emails`;
+  return `Removed ${name}. ${who} got a new match. ${emails} didn't go through, so we'll try again automatically.`;
+}
+
+/**
+ * Emails each listed giver their match. Reads pairings internally; returns only counts, plus the
+ * names of failed people the organizer may know about.
  * `changedIds` get the "your match has changed" wording.
+ * `blindIds` are people whose match changed because of someone else's add or remove: their
+ * failures are only counted (`blindFailed`) and retried by the daily cron, never named or badged.
  */
 async function emailMatches(
   db: Db,
   group: Group,
   giverIds: readonly string[],
-  { changedIds = [] }: { changedIds?: readonly string[] } = {},
-): Promise<{ sent: number; failed: string[]; failedNote: string }> {
+  { changedIds = [], blindIds = [] }: { changedIds?: readonly string[]; blindIds?: readonly string[] } = {},
+): Promise<{ sent: number; failed: string[]; blindFailed: number; failedNote: string }> {
   const members = await loadMembers(db, group.id);
   const byId = new Map(members.map((m) => [m.id, m]));
   const receiverOf = new Map((await loadAssignments(db, group.id)).map((a) => [a.giver, a.receiver]));
@@ -466,43 +583,97 @@ async function emailMatches(
   const exchangeDate = formatExchangeDate(group.exchange_date);
 
   const targets = giverIds.map((id) => byId.get(id)).filter((m): m is Member => Boolean(m && receiverOf.has(m.id)));
-  const emails: OutgoingEmail[] = [];
-  for (const m of targets) {
+  // A sign-in link that can't be made counts as a failed email for that person, not an error
+  // for the whole batch (which would skip the bookkeeping below, retries included).
+  const links = await Promise.allSettled(targets.map((m) => signInLink(m.email, `/g/${group.id}`)));
+  const linkFailures = links.filter((l) => l.status === "rejected").length;
+  if (linkFailures) console.error(`Couldn't make ${linkFailures} sign-in link(s) for match emails`);
+  const ready = targets.flatMap((m, i) => {
+    const link = links[i]!;
+    return link.status === "fulfilled" ? [{ m, link: link.value }] : [];
+  });
+  const emails: OutgoingEmail[] = ready.map(({ m, link }) => {
     const giftee = byId.get(receiverOf.get(m.id)!)!;
-    emails.push(
-      matchEmail({
-        to: m.email,
-        name: m.display_name,
-        groupName: group.name,
-        budget,
-        exchangeDate,
-        gifteeHasAnswers: Boolean(giftee.questionnaire_updated_at),
-        link: await signInLink(m.email, `/g/${group.id}`),
-        changed: changedIds.includes(m.id),
-      }),
-    );
-  }
-  const results = await sendEmails(emails);
+    return matchEmail({
+      to: m.email,
+      name: m.display_name,
+      groupName: group.name,
+      budget,
+      exchangeDate,
+      gifteeHasAnswers: Boolean(giftee.questionnaire_updated_at),
+      link,
+      changed: changedIds.includes(m.id),
+    });
+  });
+  const sendResults = await sendEmails(emails);
+  const delivered = new Map(ready.map(({ m }, i) => [m.id, sendResults[i] === true]));
+  const plan = planDeliveryUpdates(
+    targets.map((m) => m.id),
+    targets.map((m) => delivered.get(m.id) === true),
+    blindIds,
+  );
+
   const now = new Date().toISOString();
-  const okIds = targets.filter((_, i) => results[i]).map((m) => m.id);
-  const failed = targets.filter((_, i) => !results[i]);
-  if (okIds.length) await db.from("memberships").update({ match_email_status: "sent", match_email_sent_at: now }).in("id", okIds);
-  if (failed.length) await db.from("memberships").update({ match_email_status: "failed" }).in("id", failed.map((m) => m.id));
+  // The emails are already out, so a bookkeeping error is logged (code only, no names) rather than
+  // thrown: throwing would make Send roll the group back to "matched" after people got their match.
+  const update = async (ids: string[], values: Record<string, unknown>) => {
+    if (!ids.length) return;
+    const { error } = await db.from("memberships").update(values).in("id", ids);
+    if (error) console.error("emailMatches status update failed", error.code);
+  };
+  await update(plan.sent, { match_email_status: "sent", match_email_sent_at: now, match_email_retry: false });
+  await update(plan.failed, { match_email_status: "failed", match_email_retry: false });
+  await update(plan.blindSent, { match_email_sent_at: now, match_email_retry: false });
+  await update(plan.blindFailed, { match_email_retry: true });
 
   // Santas just got a fresh look at their giftee, so earlier edits don't need a separate email.
-  const receivers = okIds.map((id) => receiverOf.get(id)!);
+  const receivers = [...plan.sent, ...plan.blindSent].map((id) => receiverOf.get(id)!);
   if (receivers.length) {
     await db
       .from("profile_notifications")
       .upsert(receivers.map((id) => ({ membership_id: id, last_edit_at: now, notified_at: now })));
   }
 
-  const failedNames = failed.map((m) => m.display_name);
+  const failedNames = plan.failed.map((id) => byId.get(id)!.display_name);
   return {
-    sent: okIds.length,
+    sent: plan.sent.length + plan.blindSent.length,
     failed: failedNames,
+    blindFailed: plan.blindFailed.length,
     failedNote: failedNames.length ? ` Couldn't email ${failedNames.join(", ")}; check their address and press Resend.` : "",
   };
+}
+
+/**
+ * Daily retry for "your match has changed" emails that failed after an add or remove.
+ * Match-blind like the first attempt: it updates only server-only columns, logs only a count,
+ * and stops once the person's group is no longer "sent" (a re-match and Send emails everyone).
+ */
+export async function retryChangedMatchEmails(): Promise<{ sent: number; failed: number }> {
+  const db = createAdminClient();
+  const { data, error } = await db
+    .from("memberships")
+    .select("id, group_id, groups!inner(status)")
+    .eq("match_email_retry", true)
+    .eq("groups.status", "sent");
+  if (error) throw error;
+  const byGroup = new Map<string, string[]>();
+  for (const row of data) byGroup.set(row.group_id as string, [...(byGroup.get(row.group_id as string) ?? []), row.id as string]);
+
+  let sent = 0;
+  let failed = 0;
+  for (const [groupId, ids] of byGroup) {
+    try {
+      const group = await loadGroup(db, groupId);
+      const result = await emailMatches(db, group, ids, { changedIds: ids, blindIds: ids });
+      sent += result.sent;
+      failed += result.blindFailed;
+      await audit(db, groupId, null, "match_email_retried", { sent: result.sent, failed: result.blindFailed });
+    } catch (err) {
+      failed += ids.length;
+      console.error("retryChangedMatchEmails", err instanceof Error && !("code" in err) ? err.message : err);
+    }
+  }
+  return { sent, failed };
 }
 
 /** The Send button: emails everyone their match. */
@@ -514,9 +685,31 @@ export async function sendAllMatches(groupId: string, actorUserId: string): Prom
     if (group.status === "draft") return { ok: false, message: "Press Match first." };
     if (group.status === "sent") return { ok: false, message: "Already sent. Use Resend for one person, or re-match to start over." };
 
+    // Claim the send first, so a second click or a second tab can't email everyone twice.
+    const { data: claimed, error: claimError } = await db
+      .from("groups")
+      .update({ status: "sent", sent_at: new Date().toISOString() })
+      .eq("id", groupId)
+      .eq("status", "matched")
+      .select("id");
+    if (claimError) throw claimError;
+    if (!claimed?.length) return { ok: false, message: "Already sending. Refresh the page in a moment to see the result." };
+
     const members = await loadMembers(db, groupId);
-    const result = await emailMatches(db, group, members.map((m) => m.id));
-    await db.from("groups").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", groupId);
+    // After a re-match, people who already got an earlier match are told theirs has changed.
+    const changedIds = members.filter((m) => m.match_email_sent_at).map((m) => m.id);
+    let result;
+    try {
+      result = await emailMatches(db, group, members.map((m) => m.id), { changedIds });
+    } catch (err) {
+      await db.from("groups").update({ status: "matched", sent_at: null }).eq("id", groupId);
+      throw err;
+    }
+    if (result.sent === 0) {
+      await db.from("groups").update({ status: "matched", sent_at: null }).eq("id", groupId);
+      await audit(db, groupId, actorUserId, "send_failed", { failed: result.failed.length });
+      return { ok: false, message: "No emails could be sent, so nothing has changed. Please try Send again in a few minutes." };
+    }
     await audit(db, groupId, actorUserId, "sent", { sent: result.sent, failed: result.failed.length });
     return {
       ok: result.failed.length === 0,
@@ -533,6 +726,7 @@ export async function resendMatch(groupId: string, actorUserId: string, memberId
   try {
     await assertAdmin(db, groupId, actorUserId);
     const group = await loadGroup(db, groupId);
+    if (group.revealed_at) return { ok: false, message: "Matches have been revealed, so there's nothing to resend." };
     if (group.status !== "sent") return { ok: false, message: "Matches haven't been sent yet." };
     const result = await emailMatches(db, group, [memberId]);
     await audit(db, groupId, actorUserId, "resent", { ok: result.sent === 1 });
@@ -590,12 +784,23 @@ export async function deliverProfileUpdates(): Promise<number> {
   const db = createAdminClient();
   const { data: rows, error } = await db.from("profile_notifications").select("membership_id, last_edit_at, notified_at");
   if (error) throw error;
+  // Gift ideas first, for everyone in a sent group whose cached ideas are missing or stale (this also
+  // covers people who filled in their questionnaire before the draw). A failure never blocks emails.
+  let freshIdeas = new Set<string>();
+  try {
+    const { data: sent } = await db.from("assignments").select("receiver_id, groups!inner(status)").eq("groups.status", "sent");
+    freshIdeas = await refreshGiftIdeas(db, [...new Set((sent ?? []).map((a) => a.receiver_id as string))]);
+  } catch (err) {
+    console.error("refreshGiftIdeas", err instanceof Error ? err.name : "error");
+  }
+
   const now = Date.now();
   const due = rows.filter((r) => {
     if (!r.notified_at) return true;
     const notified = Date.parse(r.notified_at as string);
     return Date.parse(r.last_edit_at as string) > notified && now - notified >= PROFILE_NOTIFY_THROTTLE_MS;
   });
+  console.info(`deliverProfileUpdates: ${rows.length} queued, ${due.length} due`);
   if (!due.length) return 0;
 
   const gifteeIds = due.map((r) => r.membership_id as string);
@@ -605,6 +810,7 @@ export async function deliverProfileUpdates(): Promise<number> {
     .in("receiver_id", gifteeIds)
     .eq("groups.status", "sent");
   if (pairsError) throw pairsError;
+  console.info(`deliverProfileUpdates: ${pairs.length} Santa(s) to tell`);
   if (!pairs.length) return 0;
 
   const memberIds = [...new Set(pairs.flatMap((p) => [p.giver_id as string, p.receiver_id as string]))];
@@ -625,6 +831,7 @@ export async function deliverProfileUpdates(): Promise<number> {
       profileUpdatedEmail({
         to: santa.email as string,
         name: santa.display_name as string,
+        newIdeas: freshIdeas.has(giftee.id as string),
         link: await signInLink(santa.email as string, `/g/${p.group_id}#match`),
       }),
     );

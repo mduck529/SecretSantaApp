@@ -4,6 +4,9 @@ import { formatExchangeDate, groupBudget } from "@/lib/group-service";
 
 export const metadata = { title: "Organizer · Secret Santa" };
 
+// Send emails everyone one at a time; give it room.
+export const maxDuration = 60;
+
 /**
  * Organizer page. Everything here is read through Row Level Security as the organizer,
  * who can't read anyone's match or answers, so this page cannot show pairings.
@@ -15,7 +18,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   const [{ data: group }, { data: members }, { data: contacts }, { data: rules }] = await Promise.all([
     supabase
       .from("groups")
-      .select("name, status, budget_min_cents, budget_max_cents, exchange_date, sent_at")
+      .select("name, status, budget_min_cents, budget_max_cents, exchange_date, sent_at, revealed_at")
       .eq("id", groupId)
       .single(),
     supabase
@@ -40,6 +43,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
         budget_max_cents: group.budget_max_cents,
         exchange_date: group.exchange_date,
         sent_at: group.sent_at,
+        revealed_at: group.revealed_at,
       }}
       members={members as AdminMember[]}
       phones={Object.fromEntries((contacts ?? []).map((c) => [c.membership_id as string, c.phone as string]))}

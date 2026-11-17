@@ -1,6 +1,8 @@
 import { SubmitButton } from "@/components/action-form";
 import { Present } from "@/components/festive/present";
-import { safeNext } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { deadLinkOutcome, safeNext } from "@/lib/auth";
+import { createUserClient } from "@/lib/supabase/server";
 import { confirmSignIn } from "./actions";
 
 export const metadata = { title: "Continue · Secret Santa" };
@@ -15,6 +17,14 @@ export default async function ConfirmPage({
   searchParams: Promise<{ token_hash?: string; type?: string; next?: string; email?: string }>;
 }) {
   const sp = await searchParams;
+  // Already signed in as the person this link was sent to: skip straight to their page.
+  if (sp.email) {
+    const supabase = await createUserClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (deadLinkOutcome(user?.email, sp.email) === "go") redirect(safeNext(sp.next));
+  }
   return (
     <main className="narrow center">
       <div className="card form-card">
