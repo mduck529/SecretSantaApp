@@ -3,17 +3,25 @@ import type { OutgoingEmail } from "./send";
 const escape = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
+/** Classic Cozy email: string-light dots, an evergreen header, a cream card and a cranberry button. */
 function layout(opts: { preheader: string; heading: string; paragraphs: string[]; button: { label: string; url: string }; footer?: string }) {
-  const p = (html: string) => `<p style="margin:0 0 16px;font-size:16px;line-height:1.5;color:#1f2a24">${html}</p>`;
-  return `<!doctype html><html><body style="margin:0;background:#fbf8f3;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif">
+  const p = (html: string) => `<p style="margin:0 0 16px;font-size:16px;line-height:1.55;color:#2b2320">${html}</p>`;
+  const bulbs = ["#a51c30", "#d9a93f", "#1f4d3a"];
+  const lights = Array.from({ length: 13 }, (_, i) => `<td align="center" style="padding:0"><span style="display:inline-block;width:10px;height:14px;border-radius:5px 5px 6px 6px;background:${bulbs[i % 3]}"></span></td>`).join("");
+  const serif = "Georgia,'Times New Roman',serif";
+  return `<!doctype html><html><body style="margin:0;background:#f6eee1;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif">
 <span style="display:none;max-height:0;overflow:hidden">${escape(opts.preheader)}</span>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 16px">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:12px;border:1px solid #eadfd2">
-<tr><td style="padding:28px 24px">
-<h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;color:#b3261e">${opts.heading}</h1>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6eee1"><tr><td align="center" style="padding:20px 16px 28px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px">
+<tr><td style="padding:0 6px 10px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${lights}</tr></table></td></tr>
+<tr><td style="background:#1f4d3a;border-radius:16px 16px 0 0;padding:18px 24px;border-bottom:4px solid #d9a93f">
+<p style="margin:0;font-family:${serif};font-style:italic;font-weight:bold;font-size:24px;color:#f6e7c1">Secret Santa</p>
+</td></tr>
+<tr><td style="background:#fffaf2;border:1px solid #e2d2bb;border-top:0;border-radius:0 0 16px 16px;padding:28px 24px">
+<h1 style="margin:0 0 16px;font-family:${serif};font-size:26px;line-height:1.2;color:#a51c30">${opts.heading}</h1>
 ${opts.paragraphs.map(p).join("\n")}
-<p style="margin:24px 0"><a href="${escape(opts.button.url)}" style="display:inline-block;background:#b3261e;color:#ffffff;text-decoration:none;font-weight:600;font-size:16px;padding:12px 20px;border-radius:8px">${escape(opts.button.label)}</a></p>
-<p style="margin:0;font-size:13px;color:#6b6b6b">${opts.footer ?? "Shh, keep it a secret."}</p>
+<p style="margin:26px 0"><a href="${escape(opts.button.url)}" style="display:inline-block;background:#a51c30;color:#fff7ea;text-decoration:none;font-weight:bold;font-size:16px;padding:14px 24px;border-radius:999px;border-bottom:4px solid #6e0f1e">${escape(opts.button.label)}</a></p>
+<p style="margin:0;font-family:${serif};font-style:italic;font-size:15px;color:#6c5e52">${opts.footer ?? "Shh, keep it a secret."}</p>
 </td></tr></table></td></tr></table></body></html>`;
 }
 

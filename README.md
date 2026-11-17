@@ -38,3 +38,13 @@ scripts/test-db.sh   # schema + privacy tests (needs a local Postgres)
 cp apps/web/.env.example apps/web/.env.local   # then fill in Supabase keys
 pnpm dev
 ```
+
+### Preview the design without a database
+
+With `pnpm dev` running, open <http://localhost:3000/dev/preview>. It shows each person's page and the
+organizer page with made-up data (`?view=match`, `match-empty`, `waiting`, `admin`, `admin-draft`).
+This page returns 404 in production.
+
+### Family photo
+
+Signed-in pages can show a family photo. See `apps/web/lib/family-photo.ts` for the two-line change.
