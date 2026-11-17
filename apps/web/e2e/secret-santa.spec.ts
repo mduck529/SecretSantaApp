@@ -140,10 +140,13 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
   await benPage.goto(await signInLinkOf(matchMails.find((m) => m.to.includes(ben.email))!, origin));
   await benPage.getByRole("button", { name: "Continue" }).click();
   await expect(benPage).toHaveURL(new RegExp(`/g/${groupId}`));
-  // The match is wrapped until Ben unwraps the present.
-  await expect(benPage.getByText("You're buying for")).toHaveCount(0);
+  // The match is wrapped until Ben unwraps the present. (Exact text: the unwrap hint itself
+  // says "Tap the present to see who you're buying for".)
+  const buyingFor = benPage.getByText("You're buying for", { exact: true });
+  await expect(buyingFor).toHaveCount(0);
+  await expect(benPage.locator(".giftee")).toHaveCount(0);
   await benPage.getByRole("button", { name: /Unwrap the present/ }).click();
-  await expect(benPage.getByText("You're buying for")).toBeVisible();
+  await expect(buyingFor).toBeVisible();
   const benGiftee = (await benPage.locator(".giftee").innerText()).trim();
   expect(benGiftee).toBe(await actualGifteeOf(groupId, ben.email));
   expect(benGiftee).not.toBe("Ann"); // his "can't draw" rule
