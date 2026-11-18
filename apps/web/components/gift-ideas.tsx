@@ -67,7 +67,7 @@ export function GiftIdeasPanel({ ideas, name, hasAnswers }: { ideas: GiftIdeas |
           ) : null}
         </>
       ) : (
-        <p className="muted">Gift ideas are on their way. Check back soon.</p>
+        <p className="muted">The elves are busy in the workshop. Gift ideas for {name} are on their way, so check back soon.</p>
       )}
     </div>
   );

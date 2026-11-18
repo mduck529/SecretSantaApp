@@ -1,4 +1,5 @@
 import { SubmitButton } from "@/components/action-form";
+import { Present } from "@/components/festive/present";
 import { redirect } from "next/navigation";
 import { deadLinkOutcome, safeNext } from "@/lib/auth";
 import { createUserClient } from "@/lib/supabase/server";
@@ -26,16 +27,20 @@ export default async function ConfirmPage({
   }
   return (
     <main className="narrow center">
-      <h1>🎁 Secret Santa</h1>
-      <form action={confirmSignIn} className="stack">
-        <input type="hidden" name="token_hash" value={sp.token_hash ?? ""} />
-        <input type="hidden" name="type" value={sp.type ?? "email"} />
-        <input type="hidden" name="next" value={safeNext(sp.next)} />
-        <input type="hidden" name="email" value={sp.email ?? ""} />
-        <SubmitButton className="primary big" pendingText="Signing you in…">
-          Continue
-        </SubmitButton>
-      </form>
+      <div className="card form-card">
+        <Present />
+        <p className="eyebrow">Secret Santa</p>
+        <h1>Something&apos;s waiting for you</h1>
+        <form action={confirmSignIn} className="stack">
+          <input type="hidden" name="token_hash" value={sp.token_hash ?? ""} />
+          <input type="hidden" name="type" value={sp.type ?? "email"} />
+          <input type="hidden" name="next" value={safeNext(sp.next)} />
+          <input type="hidden" name="email" value={sp.email ?? ""} />
+          <SubmitButton className="primary big" pendingText="Signing you in…">
+            Continue
+          </SubmitButton>
+        </form>
+      </div>
     </main>
   );
 }

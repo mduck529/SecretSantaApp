@@ -1,9 +1,7 @@
-import Link from "next/link";
 import type { Answers, GiftIdeas } from "@santa/core";
-import { ActionForm, SubmitButton } from "@/components/action-form";
-import { GiftIdeasPanel } from "@/components/gift-ideas";
-import { AnswersView, QuestionnaireFields } from "@/components/questionnaire";
+import { PersonView } from "@/components/person-view";
 import { requireMember } from "@/lib/auth";
+import { familyPhoto } from "@/lib/family-photo";
 import { formatExchangeDate, groupBudget } from "@/lib/group-service";
 import { saveQuestionnaire } from "./actions";
 
@@ -27,7 +25,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     .maybeSingle();
 
   // Only after the organizer presses Send. RLS returns only this person's own match.
-  let giftee: { name: string; answers: Answers | null; ideas: GiftIdeas | null } | null = null;
+  let giftee: { id: string; name: string; answers: Answers | null; ideas: GiftIdeas | null } | null = null;
   if (group.status === "sent") {
     const { data: match } = await supabase
       .from("assignments")
@@ -41,14 +39,17 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         // The signed-in client, not the service role: RLS shows this row only to the current Santa.
         supabase.from("gift_suggestions").select("ideas").eq("receiver_id", match.receiver_id).maybeSingle(),
       ]);
-      giftee = { name: person?.display_name ?? "your giftee", answers: (theirs?.answers as Answers) ?? null,
+      giftee = {
+        id: match.receiver_id as string,
+        name: person?.display_name ?? "your giftee",
+        answers: (theirs?.answers as Answers) ?? null,
         ideas: (cached?.ideas as GiftIdeas) ?? null,
       };
     }
   }
 
   // After the organizer reveals, Row Level Security lets every member read all matches.
-  let pairs: { id: string; giver: string; receiver: string }[] = [];
+  let pairs: { id: string; giver: string; receiver: string }[] | null = null;
   if (group.revealed_at) {
     const [{ data: all }, { data: people }] = await Promise.all([
       supabase.from("assignments").select("giver_id, receiver_id").eq("group_id", groupId),
@@ -60,90 +61,20 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
       .sort((a, b) => a.giver.localeCompare(b.giver));
   }
 
-  const budget = groupBudget(group);
-  const date = formatExchangeDate(group.exchange_date);
-  const hasGifteeAnswers = giftee?.answers && Object.keys(giftee.answers).length > 0;
-
   return (
-    <main className="page">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">{group.name}</p>
-          <h1>Hi {membership.display_name.split(" ")[0]} 👋</h1>
-        </div>
-        {isAdmin ? (
-          <Link className="button" href={`/g/${groupId}/admin`}>
-            Organizer tools
-          </Link>
-        ) : null}
-      </header>
-
-      <section id="match" className="card match">
-        {giftee ? (
-          <>
-            <p className="eyebrow">You&apos;re buying for</p>
-            <h2 className="giftee">{giftee.name}</h2>
-            <p>
-              Budget <strong>{budget}</strong>
-              {date ? (
-                <>
-                  {" "}
-                  · Exchange <strong>{date}</strong>
-                </>
-              ) : null}
-            </p>
-            {hasGifteeAnswers ? (
-              <AnswersView answers={giftee.answers!} />
-            ) : (
-              <p className="muted">
-                {giftee.name} hasn&apos;t filled out their questionnaire yet. We&apos;ll email you as soon as they do.
-              </p>
-            )}
-            <GiftIdeasPanel ideas={giftee.ideas} name={giftee.name} hasAnswers={!!hasGifteeAnswers} />
-          </>
-        ) : (
-          <>
-            <h2>Your match is on its way</h2>
-            <p className="muted">
-              You&apos;ll get an email when names are drawn. In the meantime, fill out your questionnaire below so your
-              Secret Santa knows what you&apos;d love.
-            </p>
-          </>
-        )}
-      </section>
-
-      {group.revealed_at ? (
-        <section id="reveal" className="card">
-          <h2>Who had whom 🎁</h2>
-          <ul className="people">
-            {pairs.map((p) => (
-              <li key={p.id}>
-                <strong>{p.giver}</strong> had {p.receiver}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      <section id="questionnaire" className="card">
-        <h2>Your questionnaire</h2>
-        <p className="muted">
-          Only your Secret Santa can see this. {mine?.is_complete ? "You can update it anytime." : "It takes about 5 minutes."}
-        </p>
-        <ActionForm action={saveQuestionnaire} className="stack">
-          <input type="hidden" name="group_id" value={groupId} />
-          <QuestionnaireFields answers={(mine?.answers as Answers) ?? {}} />
-          <SubmitButton className="primary" pendingText="Saving…">
-            Save my answers
-          </SubmitButton>
-        </ActionForm>
-      </section>
-
-      <form action="/auth/signout" method="post" className="footer">
-        <button type="submit" className="link">
-          Sign out
-        </button>
-      </form>
-    </main>
+    <PersonView
+      groupId={groupId}
+      groupName={group.name}
+      myName={membership.display_name}
+      isAdmin={isAdmin}
+      budget={groupBudget(group)}
+      dateLabel={formatExchangeDate(group.exchange_date)}
+      exchangeDate={group.exchange_date}
+      photo={familyPhoto}
+      giftee={giftee}
+      revealed={pairs}
+      mine={{ answers: (mine?.answers as Answers) ?? {}, complete: Boolean(mine?.is_complete) }}
+      saveAction={saveQuestionnaire}
+    />
   );
 }

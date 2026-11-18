@@ -597,7 +597,6 @@ async function emailMatches(
     return matchEmail({
       to: m.email,
       name: m.display_name,
-      giftee: giftee.display_name,
       groupName: group.name,
       budget,
       exchangeDate,
@@ -832,7 +831,6 @@ export async function deliverProfileUpdates(): Promise<number> {
       profileUpdatedEmail({
         to: santa.email as string,
         name: santa.display_name as string,
-        giftee: giftee.display_name as string,
         newIdeas: freshIdeas.has(giftee.id as string),
         link: await signInLink(santa.email as string, `/g/${p.group_id}#match`),
       }),

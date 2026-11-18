@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { FamilyPhoto } from "@/components/festive/family-photo";
+import { Present } from "@/components/festive/present";
+import { FestiveToggles } from "@/components/festive/toggles";
 import { canCreateGroups, requireUser } from "@/lib/auth";
+import { familyPhoto } from "@/lib/family-photo";
 
 export const metadata = { title: "Your groups · Secret Santa" };
 
@@ -13,17 +17,25 @@ export default async function HomePage() {
 
   return (
     <main className="narrow">
-      <h1>Your Secret Santa groups</h1>
+      <p className="eyebrow">Secret Santa</p>
+      <h1>Your groups</h1>
+      <FamilyPhoto photo={familyPhoto} />
       {groups && groups.length ? (
         <ul className="cards">
           {groups.map((g) => (
             <li key={g.id}>
-              <Link href={`/g/${g.id}`}>{g.name}</Link>
+              <Link href={`/g/${g.id}`}>
+                <Present size="sm" />
+                <span>{g.name}</span>
+                <span aria-hidden="true" className="arrow">
+                  →
+                </span>
+              </Link>
             </li>
           ))}
         </ul>
       ) : (
-        <p>You&apos;re not in a group yet. If someone added you, use the link in their email.</p>
+        <p className="card muted">You&apos;re not in a group yet. If someone added you, use the link in their email.</p>
       )}
       {canCreateGroups(user.email) ? (
         <p>
@@ -32,17 +44,14 @@ export default async function HomePage() {
           </Link>
         </p>
       ) : null}
-      <SignOut />
+      <footer className="footer">
+        <FestiveToggles />
+        <form action="/auth/signout" method="post">
+          <button type="submit" className="link">
+            Sign out
+          </button>
+        </form>
+      </footer>
     </main>
-  );
-}
-
-function SignOut() {
-  return (
-    <form action="/auth/signout" method="post">
-      <button type="submit" className="link">
-        Sign out
-      </button>
-    </form>
   );
 }

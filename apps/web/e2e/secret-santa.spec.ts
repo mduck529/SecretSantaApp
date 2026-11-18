@@ -50,6 +50,22 @@ async function assignmentsVisibleTo(context: BrowserContext): Promise<unknown[]>
   return (await res.json()) as unknown[];
 }
 
+/**
+ * Who a member is actually buying for, read with the service role. Test-only: emails no longer
+ * name the giftee (people unwrap their match on their page), so this is how the test checks the
+ * page shows the right person.
+ */
+async function actualGifteeOf(groupId: string, email: string): Promise<string> {
+  const headers = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
+  const [members, pairs] = await Promise.all([
+    fetch(`${SUPABASE_URL}/rest/v1/memberships?group_id=eq.${groupId}&select=id,display_name,email`, { headers }).then((r) => r.json()),
+    fetch(`${SUPABASE_URL}/rest/v1/assignments?group_id=eq.${groupId}&select=giver_id,receiver_id`, { headers }).then((r) => r.json()),
+  ]) as [{ id: string; display_name: string; email: string }[], { giver_id: string; receiver_id: string }[]];
+  const giver = members.find((m) => m.email.toLowerCase() === email.toLowerCase())!;
+  const receiverId = pairs.find((p) => p.giver_id === giver.id)!.receiver_id;
+  return members.find((m) => m.id === receiverId)!.display_name;
+}
+
 const personRow = (page: Page, name: string) =>
   page.locator("li.person").filter({ has: page.locator("strong", { hasText: new RegExp(`^${name}$`) }) });
 
@@ -112,11 +128,11 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
   await page.getByRole("button", { name: "Send to everyone" }).click();
   await expect(page.getByText("Sent ✓").first()).toBeVisible();
 
-  // Each person got exactly one match email. It is the only place the test learns who has whom.
-  const matchSubject = /You're .* Secret Santa/;
+  // Each person got exactly one match email. It doesn't say who they have: they unwrap that on their page.
+  const matchSubject = /Your Secret Santa match is ready to unwrap/;
   const matchMails = await waitForMail(everyone, matchSubject, everyone.length);
   expect(matchMails).toHaveLength(everyone.length);
-  const giftee = (to: string) => /You're (.+)'s Secret Santa/.exec(matchMails.find((m) => m.to.includes(to))!.subject)![1]!;
+  for (const mail of matchMails) expect(mail.subject).not.toMatch(/Ann|Ben|Cara|Dan|Eve/);
 
   // --- A member opens their email link and sees their giftee -----------------------------------
   const benContext = await browser.newContext(phone);
@@ -124,9 +140,15 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
   await benPage.goto(await signInLinkOf(matchMails.find((m) => m.to.includes(ben.email))!, origin));
   await benPage.getByRole("button", { name: "Continue" }).click();
   await expect(benPage).toHaveURL(new RegExp(`/g/${groupId}`));
-  await expect(benPage.getByText("You're buying for")).toBeVisible();
+  // The match is wrapped until Ben unwraps the present. (Exact text: the unwrap hint itself
+  // says "Tap the present to see who you're buying for".)
+  const buyingFor = benPage.getByText("You're buying for", { exact: true });
+  await expect(buyingFor).toHaveCount(0);
+  await expect(benPage.locator(".giftee")).toHaveCount(0);
+  await benPage.getByRole("button", { name: /Unwrap the present/ }).click();
+  await expect(buyingFor).toBeVisible();
   const benGiftee = (await benPage.locator(".giftee").innerText()).trim();
-  expect(benGiftee).toBe(giftee(ben.email));
+  expect(benGiftee).toBe(await actualGifteeOf(groupId, ben.email));
   expect(benGiftee).not.toBe("Ann"); // his "can't draw" rule
   expect(benGiftee).not.toBe("Ben");
 
@@ -135,14 +157,15 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
   await benPage.getByLabel(/Hobbies and interests/).fill("Fishing and woodworking");
   await benPage.getByLabel(/Things you love/).fill("Dark roast coffee");
   await benPage.getByLabel(/Please no/).fill("Socks");
-  await benPage.getByRole("button", { name: "Save my answers" }).click();
-  await expect(benPage.getByRole("status")).toContainText("Saved");
+  await benPage.getByRole("button", { name: "Save & continue" }).click();
+  await expect(benPage.locator(".wizard").getByRole("status")).toContainText("Saved");
 
-  const updatedSubject = /Ben updated their Secret Santa questionnaire/;
-  await waitForMail(everyone, updatedSubject);
+  // Exactly one Santa is told (Ben's), and the email doesn't name Ben.
+  const updatedSubject = /The person you're buying for updated their questionnaire/;
+  const updates = await waitForMail(everyone, updatedSubject);
   expect(await findMail(everyone, updatedSubject)).toHaveLength(1);
-  // Nobody else's questionnaire changed, so nobody else's Santa is emailed.
-  expect(await findMail(everyone, /updated their Secret Santa questionnaire/)).toHaveLength(1);
+  expect(updates[0]!.to).not.toContain(ben.email);
+  expect(updates[0]!.subject).not.toContain("Ben");
 
   // --- Organizer resends one email -------------------------------------------------------------
   const caraBefore = (await findMail([cara.email], matchSubject)).length;

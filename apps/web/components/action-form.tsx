@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, type ReactNode } from "react";
+import { useActionState, useEffect, useRef, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
+import { burst, sleighBells } from "./festive/effects";
 
-export type ActionState = { ok: boolean; message: string } | null;
+export type ActionState = { ok: boolean; message: string; complete?: boolean } | null;
 export type FormAction = (prev: ActionState, formData: FormData) => Promise<ActionState>;
 
 /** A form that runs a server action and shows its result message underneath. */
@@ -12,16 +13,29 @@ export function ActionForm({
   children,
   confirm,
   className,
+  celebrate,
 }: {
   action: FormAction;
   children: ReactNode;
   /** If set, asks the user to confirm before submitting. */
   confirm?: string;
   className?: string;
+  /** Confetti and sleigh bells when the action succeeds. */
+  celebrate?: boolean;
 }) {
   const [state, formAction] = useActionState(action, null);
+  const ref = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    if (celebrate && state?.ok) {
+      burst(ref.current);
+      sleighBells();
+    }
+  }, [state, celebrate]);
+
   return (
     <form
+      ref={ref}
       action={formAction}
       className={className}
       onSubmit={(e) => {

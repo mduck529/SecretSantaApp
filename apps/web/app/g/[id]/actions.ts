@@ -45,6 +45,7 @@ export async function saveQuestionnaire(_prev: ActionState, formData: FormData):
   revalidatePath(`/g/${groupId}`);
   return {
     ok: true,
+    complete,
     message: complete
       ? "Saved ✓ Your Secret Santa will get a heads-up. You can come back and change this anytime."
       : "Saved ✓ Fill in the starred questions when you can, so your Santa has the basics.",
