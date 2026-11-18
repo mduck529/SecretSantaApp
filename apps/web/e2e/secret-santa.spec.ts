@@ -154,9 +154,9 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
 
   // --- Saves the questionnaire; their Santa is told ---------------------------------------------
   await pretendMatchEmailsWentOutAnHourAgo();
-  await benPage.getByLabel(/Hobbies and interests/).fill("Fishing and woodworking");
-  await benPage.getByLabel(/Things you love/).fill("Dark roast coffee");
-  await benPage.getByLabel(/Please no/).fill("Socks");
+  // Part 1 of the questionnaire ("Get to know you"); every save tells their Santa.
+  await benPage.getByLabel(/free afternoon/).fill("Fishing and woodworking");
+  await benPage.getByLabel(/always make you happy/).fill("Dark roast coffee");
   await benPage.getByRole("button", { name: "Save & continue" }).click();
   await expect(benPage.locator(".wizard").getByRole("status")).toContainText("Saved");
 

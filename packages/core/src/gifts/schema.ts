@@ -63,6 +63,11 @@ export interface DiyIdea {
 export interface GiftIdeas {
   retail: RetailIdea[];
   diy: DiyIdea[];
+  /**
+   * "In a nutshell": a few warm sentences that help the Santa get to know the giftee.
+   * Optional because rows saved before it existed don't have it.
+   */
+  nutshell?: string;
 }
 
 /** Display limits, checked by the validator (structured outputs cannot enforce lengths or counts). */
@@ -74,6 +79,7 @@ export const LIMITS = {
   howToChars: 300,
   materials: { min: 1, max: 12 },
   materialChars: 60,
+  nutshellChars: 500,
 } as const;
 
 const basedOnSchema = {
@@ -90,8 +96,12 @@ const basedOnSchema = {
 export const GIFT_IDEAS_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["retail", "diy"],
+  required: ["nutshell", "retail", "diy"],
   properties: {
+    nutshell: {
+      type: "string",
+      description: "Two or three warm sentences, under 70 words, that help their Secret Santa get to know them. Refers to them as \"they\".",
+    },
     retail: {
       type: "array",
       description: `Exactly ${RETAIL_IDEA_COUNT} things to buy.`,

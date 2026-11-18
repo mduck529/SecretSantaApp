@@ -3,7 +3,7 @@ import type { StaticImageData } from "next/image";
 import type { Answers, GiftIdeas } from "@santa/core";
 import type { FormAction } from "./action-form";
 import { GiftIdeasPanel } from "./gift-ideas";
-import { AnswersView } from "./questionnaire";
+import { AnswersView, Nutshell } from "./questionnaire";
 import { QuestionnaireWizard } from "./questionnaire-wizard";
 import { Countdown } from "./festive/countdown";
 import { FamilyPhoto } from "./festive/family-photo";
@@ -73,6 +73,7 @@ export function PersonView(p: PersonViewProps) {
                   </>
                 ) : null}
               </p>
+              <Nutshell name={gifteeName} summary={p.giftee.ideas?.nutshell ?? null} hasAnswers={hasAnswers} />
               {hasAnswers ? (
                 <AnswersView answers={p.giftee.answers!} name={gifteeName} />
               ) : (

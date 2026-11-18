@@ -8,6 +8,7 @@ const budget = { minCents: 100_00, maxCents: 150_00, currency: "USD" as const };
 const answers = { hobbies: "Fly fishing", please_no: "Mugs" };
 
 const good = {
+  nutshell: "An outdoorsy coffee lover who's happiest on the water.",
   retail: [
     { title: "Fly-tying kit", reason: "They tie their own flies.", based_on: "hobbies", estimated_price_usd: 120, search_keywords: "fly tying kit", best_shop: "amazon", is_experience: false },
     { title: "Fishing waders", reason: "They fish in all weather.", based_on: "hobbies", estimated_price_usd: 140, search_keywords: "fishing waders", best_shop: "target", is_experience: false },

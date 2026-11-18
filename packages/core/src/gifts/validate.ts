@@ -26,7 +26,7 @@ export type GiftProblemCode =
   | "duplicate" // two ideas with the same title
   | "budget" // price outside the group budget
   | "please_no" // matches something from "Please no…" or allergies
-  | "experience" // experience gift for someone who said "I'd rather have a thing"
+  | "experience" // experience gift for someone who picked "Something to keep"
   | "based_on"; // reason claims an answer the giftee did not give
 
 export interface GiftProblem {
@@ -107,8 +107,10 @@ export function parseGiftIdeas(raw: unknown): GiftIdeas | null {
   const retail = raw.retail.map(readRetail);
   const diy = raw.diy.map(readDiy);
   if (retail.some((r) => !r) || diy.some((d) => !d)) return null;
+  if (raw.nutshell !== undefined && !isStr(raw.nutshell)) return null;
   const trim = <T extends { title: string; reason: string }>(i: T): T => ({ ...i, title: i.title.trim(), reason: i.reason.trim() });
   return {
+    ...(isStr(raw.nutshell) ? { nutshell: raw.nutshell.trim() } : {}),
     retail: (retail as RetailIdea[]).map((r) => ({ ...trim(r), search_keywords: r.search_keywords.trim() })),
     diy: (diy as DiyIdea[]).map((d) => ({
       ...trim(d),
@@ -136,6 +138,10 @@ export function validateGiftIdeas(raw: unknown, ctx: GiftCheckContext): GiftChec
     add("count", `Expected ${DIY_IDEA_COUNT} DIY ideas, got ${ideas.diy.length}.`);
   }
 
+  if (!ideas.nutshell || ideas.nutshell.length > LIMITS.nutshellChars || LINK.test(ideas.nutshell)) {
+    add("text", `The nutshell must be 1-${LIMITS.nutshellChars} characters with no links.`, "nutshell");
+  }
+
   const answered = new Set(Object.keys(ctx.answers).filter((k) => ANSWERABLE.has(k) && ctx.answers[k]?.trim()));
   const checkCommon = (at: string, i: { title: string; reason: string; based_on: string }) => {
     if (!i.title || i.title.length > LIMITS.titleChars) add("text", `Title must be 1-${LIMITS.titleChars} characters.`, at);
@@ -148,7 +154,7 @@ export function validateGiftIdeas(raw: unknown, ctx: GiftCheckContext): GiftChec
   };
 
   const price = retailPriceRange(ctx.budget);
-  const preferThings = ctx.answers.experiences === "I'd rather have a thing";
+  const preferThings = ctx.answers.keep_or_do === "Something to keep";
   ideas.retail.forEach((r, n) => {
     const at = `retail[${n}]`;
     checkCommon(at, r);
@@ -164,7 +170,7 @@ export function validateGiftIdeas(raw: unknown, ctx: GiftCheckContext): GiftChec
     if (r.estimated_price_usd < price.min || r.estimated_price_usd > price.max) {
       add("budget", `Price $${r.estimated_price_usd} is outside $${price.min}-$${price.max}.`, at);
     }
-    if (preferThings && r.is_experience) add("experience", "They said they'd rather have a thing than an experience.", at);
+    if (preferThings && r.is_experience) add("experience", "They picked something to keep over something to do.", at);
   });
 
   const costMax = diyCostMax(ctx.budget);
@@ -221,5 +227,8 @@ export function keepCleanIdeas(result: GiftCheckResult): GiftIdeas | null {
   const bad = problemsByIdea(result.problems);
   const retail = result.ideas.retail.filter((_, n) => !bad.has(`retail[${n}]`)).slice(0, RETAIL_IDEA_COUNT);
   const diy = result.ideas.diy.filter((_, n) => !bad.has(`diy[${n}]`)).slice(0, DIY_IDEA_COUNT);
-  return retail.length + diy.length > 0 ? { retail, diy } : null;
+  if (retail.length + diy.length === 0) return null;
+  // A bad nutshell is dropped on its own; the ideas are still worth showing.
+  const nutshell = bad.has("nutshell") ? undefined : result.ideas.nutshell;
+  return nutshell ? { nutshell, retail, diy } : { retail, diy };
 }

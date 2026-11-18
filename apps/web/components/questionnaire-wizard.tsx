@@ -1,7 +1,7 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useRef, useState } from "react";
-import { QUESTIONNAIRE, type Answers, type Question } from "@santa/core";
+import { startTransition, useActionState, useEffect, useRef, useState, type ReactNode } from "react";
+import { BOTH, NEITHER, QUESTIONNAIRE, type Answers, type Question } from "@santa/core";
 import type { FormAction } from "./action-form";
 import { burst } from "./festive/effects";
 
@@ -89,6 +89,7 @@ export function QuestionnaireWizard({
               </span>
               {section.title}
             </legend>
+            {section.intro ? <p className="section-intro">{section.intro}</p> : null}
             {section.questions.map((q) => (
               <Field key={q.key} q={q} value={answers[q.key] ?? ""} />
             ))}
@@ -154,6 +155,7 @@ function Label({ q }: { q: Question }) {
 
 function Field({ q, value }: { q: Question; value: string }) {
   if (q.kind === "choice") return <Choice q={q} value={value} />;
+  if (q.kind === "this_or_that") return <ThisOrThat q={q} value={value} />;
   if (q.kind === "long_text") {
     return (
       <label>
@@ -191,6 +193,70 @@ function Choice({ q, value }: { q: Extract<Question, { kind: "choice" }>; value:
             Clear
           </button>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "Coffee or tea?" as two big cards side by side, with "Both!" and "Neither" underneath.
+ * Picking one glides to the next pair. Radio buttons underneath, so it works with a keyboard.
+ */
+function ThisOrThat({ q, value }: { q: Extract<Question, { kind: "this_or_that" }>; value: string }) {
+  const [picked, setPicked] = useState(value);
+  const root = useRef<HTMLDivElement>(null);
+  const name = `${q.key}__pick`;
+
+  const pick = (v: string) => {
+    const first = !picked;
+    setPicked(v);
+    if (!first) return;
+    // Move on to the next unanswered pair, like flipping a card.
+    const next = root.current?.nextElementSibling;
+    if (next instanceof HTMLElement && next.classList.contains("tot")) {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      window.setTimeout(() => next.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" }), 180);
+    }
+  };
+
+  const option = (v: string, content: ReactNode, className: string) => (
+    <label className={className}>
+      <input type="radio" name={name} value={v} checked={picked === v} onChange={() => pick(v)} />
+      {content}
+    </label>
+  );
+
+  return (
+    <div className={picked ? "tot answered" : "tot"} ref={root} role="radiogroup" aria-label={q.label}>
+      <input type="hidden" name={q.key} value={picked} />
+      <div className="tot-pair">
+        {option(
+          q.options[0].label,
+          <span className="tot-card">
+            <span className="tot-emoji" aria-hidden="true">
+              {q.options[0].emoji}
+            </span>
+            {q.options[0].label}
+          </span>,
+          "tot-option",
+        )}
+        <span className="tot-or" aria-hidden="true">
+          or
+        </span>
+        {option(
+          q.options[1].label,
+          <span className="tot-card">
+            <span className="tot-emoji" aria-hidden="true">
+              {q.options[1].emoji}
+            </span>
+            {q.options[1].label}
+          </span>,
+          "tot-option",
+        )}
+      </div>
+      <div className="tot-extra">
+        {option(BOTH, <span>{BOTH}</span>, "tot-small")}
+        {option(NEITHER, <span>{NEITHER}</span>, "tot-small")}
       </div>
     </div>
   );
