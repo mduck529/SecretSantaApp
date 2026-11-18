@@ -260,7 +260,7 @@ stores them), a `budget`, `mustAvoid` phrases, and an `expect` note for a grader
 | `tiny-budget` | $10–15 |
 | `big-budget` | $250–300 |
 | `sizes-only` | Only sizes |
-| `wishlist-only` | Only links, one far over budget |
+| `this-or-that-only` | Only this-or-that picks and a favorite squishy |
 | `cats-not-cat-themed` | Loves cats, but no cat-themed things; latex allergy; long answers |
 | `dairy-free-chocolate` | Loves chocolate, allergic to dairy |
 | `spanish-answers` | Answers in Spanish ("Ropa" = clothes) |

@@ -154,7 +154,8 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
 
   // --- Saves the questionnaire; their Santa is told ---------------------------------------------
   await pretendMatchEmailsWentOutAnHourAgo();
-  // Part 1 of the questionnaire ("Get to know you"); every save tells their Santa.
+  // Jump to the "Get to know you" part of the questionnaire; every save tells their Santa.
+  await benPage.locator(".wizard-steps").getByRole("button", { name: /Get to know you/ }).click();
   await benPage.getByLabel(/free afternoon/).fill("Fishing and woodworking");
   await benPage.getByLabel(/always make you happy/).fill("Dark roast coffee");
   await benPage.getByRole("button", { name: "Save & continue" }).click();

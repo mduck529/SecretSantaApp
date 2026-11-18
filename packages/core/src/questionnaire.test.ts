@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ALL_QUESTIONS, BOTH, BRACKET_SKIP, SQUISHY_STYLES, bracketNext, squishyFavorite, NEITHER, THIS_OR_THAT, cleanAnswers, isComplete, thisOrThatPicks, wishlistLinks } from "./questionnaire.js";
+import { ALL_QUESTIONS, BOTH, BRACKET_SKIP, SQUISHY_STYLES, bracketNext, squishyFavorite, NEITHER, THIS_OR_THAT, cleanAnswers, isComplete, thisOrThatPicks } from "./questionnaire.js";
 
 describe("questionnaire", () => {
   it("has unique keys", () => {
@@ -40,11 +40,6 @@ describe("questionnaire", () => {
     ]);
   });
 
-  it("extracts only http(s) wish list links", () => {
-    expect(
-      wishlistLinks({ wishlist: "https://example.com/a\njavascript:alert(1)\n  http://shop.test/b?x=1 notalink" }),
-    ).toEqual(["https://example.com/a", "http://shop.test/b?x=1"]);
-  });
 
   it("accepts only a squishy style or the skip answer for the showdown", () => {
     expect(cleanAnswers({ squishy_favorite: " Mochi " })).toEqual({ squishy_favorite: "Mochi" });

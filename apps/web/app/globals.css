@@ -360,11 +360,6 @@ button.small, .small-button { min-height: 38px; padding: 0.3rem 0.9rem; font-siz
 .file dt { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
 .file dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .file-section h3 { margin: 0 0 0.5rem; font-style: italic; color: var(--pine); }
-.links { display: flex; flex-wrap: wrap; gap: 0.4rem; white-space: normal; }
-.link-button {
-  display: inline-flex; align-items: center; padding: 0.3rem 0.8rem; border-radius: 999px; border: 1.5px solid var(--line);
-  background: var(--field); color: var(--berry); text-decoration: none; font-weight: 700; font-size: 0.9rem; overflow-wrap: anywhere;
-}
 
 /* ------------------------------------------------------------------ */
 /* Questionnaire wizard                                                */
