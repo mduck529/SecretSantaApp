@@ -97,7 +97,11 @@ export function profileUpdatedEmail(i: { to: string; name: string; link: string;
   };
 }
 
-export function reminderEmail(i: { to: string; name: string; groupName: string; link: string }): OutgoingEmail {
+/** Organizer-written text: escaped, with line breaks kept. */
+const multiline = (s: string) => escape(s).replace(/\r?\n/g, "<br>");
+
+export function reminderEmail(i: { to: string; name: string; groupName: string; link: string; note?: string }): OutgoingEmail {
+  const note = i.note?.trim();
   return {
     to: i.to,
     subject: `Your Secret Santa is waiting to hear what you'd like`,
@@ -106,12 +110,40 @@ export function reminderEmail(i: { to: string; name: string; groupName: string; 
       heading: "Help your Secret Santa out",
       paragraphs: [
         `Hi ${escape(i.name)}, someone in <strong>${escape(i.groupName)}</strong> is shopping for you and would love a few hints.`,
+        ...(note ? [`<em>From the organizer:</em><br>${multiline(note)}`] : []),
         `Fill out your questionnaire (likes, sizes, things to avoid). It takes about 5 minutes, and you can come back and change it any time.`,
       ],
       button: { label: "Fill out my questionnaire", url: i.link },
       footer: "You can update your answers as often as you like.",
     }),
-    text: `Hi ${i.name}, your Secret Santa in ${i.groupName} would love a few hints.\n\nFill out your questionnaire: ${i.link}`,
+    text: [
+      `Hi ${i.name}, your Secret Santa in ${i.groupName} would love a few hints.`,
+      ...(note ? [`From the organizer:\n${note}`] : []),
+      `Fill out your questionnaire: ${i.link}`,
+    ].join("\n\n"),
+  };
+}
+
+/** A message from the organizer to everyone. Never contains match information. */
+export function announcementEmail(i: {
+  to: string;
+  name: string;
+  groupName: string;
+  subject: string;
+  message: string;
+  link: string;
+}): OutgoingEmail {
+  return {
+    to: i.to,
+    subject: i.subject,
+    html: layout({
+      preheader: i.message.slice(0, 90),
+      heading: escape(i.subject),
+      paragraphs: [`Hi ${escape(i.name)},`, multiline(i.message)],
+      button: { label: "Open Secret Santa", url: i.link },
+      footer: `A message from the organizer of ${escape(i.groupName)}.`,
+    }),
+    text: `Hi ${i.name},\n\n${i.message}\n\nOpen Secret Santa: ${i.link}\n\nA message from the organizer of ${i.groupName}.`,
   };
 }
 

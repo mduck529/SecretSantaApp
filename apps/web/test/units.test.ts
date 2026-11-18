@@ -10,9 +10,28 @@ import {
   removedAfterSendMessage,
 } from "@/lib/group-service";
 import { describeSendError } from "@/lib/email/send";
-import { emailChangedNotice, maskEmail, matchEmail, profileUpdatedEmail, reminderEmail } from "@/lib/email/templates";
+import {
+  announcementEmail,
+  emailChangedNotice,
+  maskEmail,
+  matchEmail,
+  profileUpdatedEmail,
+  reminderEmail,
+} from "@/lib/email/templates";
 import { checkReveal, todayInEastern } from "@/lib/reveal";
 import { canCreateGroups, deadLinkOutcome, safeNext } from "@/lib/auth";
+import {
+  isReminderAudience,
+  isResendAudience,
+  pickReminderTargets,
+  pickResendTargets,
+  questionnaireState,
+  summarize,
+  type RecipientInfo,
+} from "@/lib/audience";
+import { describeAudit } from "@/lib/audit-labels";
+import { ADMIN_MEMBER_COLUMNS } from "@/lib/admin-columns";
+import { readFileSync } from "node:fs";
 
 describe("normalizePhone", () => {
   it.each([
@@ -189,6 +208,90 @@ describe("email templates", () => {
   });
 });
 
+describe("reminder and resend audiences", () => {
+  const day = 24 * 60 * 60 * 1000;
+  const now = Date.parse("2026-11-20T12:00:00Z");
+  const person = (id: string, over: Partial<RecipientInfo> = {}): RecipientInfo => ({
+    id,
+    display_name: id,
+    user_id: "u",
+    questionnaire_complete: false,
+    questionnaire_updated_at: null,
+    last_reminded_at: null,
+    match_email_status: "sent",
+    ...over,
+  });
+  const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
+  const family = [
+    person("done", { questionnaire_complete: true, questionnaire_updated_at: "2026-11-14T00:00:00Z" }),
+    person("started", { questionnaire_updated_at: "2026-11-15T00:00:00Z" }),
+    person("blank"),
+    person("nagged", { last_reminded_at: new Date(now - 2 * 60 * 60 * 1000).toISOString() }),
+    person("failed", { user_id: null, match_email_status: "failed" }),
+  ];
+
+  it("classifies questionnaire progress", () => {
+    expect(family.map(questionnaireState)).toEqual(["done", "started", "not_started", "not_started", "not_started"]);
+  });
+
+  it("targets the right people for each reminder audience and skips the recently nagged", () => {
+    expect(ids(pickReminderTargets(family, "not_done", { now }).targets)).toEqual(["started", "blank", "failed"]);
+    expect(pickReminderTargets(family, "not_done", { now }).skippedRecent).toBe(1);
+    expect(ids(pickReminderTargets(family, "not_started", { now }).targets)).toEqual(["blank", "failed"]);
+    expect(ids(pickReminderTargets(family, "started", { now }).targets)).toEqual(["started"]);
+    expect(ids(pickReminderTargets(family, "not_done", { now, includeRecent: true }).targets)).toEqual(["started", "blank", "nagged", "failed"]);
+  });
+
+  it("lets the cooldown expire after a day", () => {
+    const old = [person("a", { last_reminded_at: new Date(now - day - 1000).toISOString() })];
+    expect(ids(pickReminderTargets(old, "not_done", { now }).targets)).toEqual(["a"]);
+  });
+
+  it("picks who to resend the match email to", () => {
+    expect(pickResendTargets(family, "everyone")).toHaveLength(5);
+    expect(ids(pickResendTargets(family, "not_signed_in"))).toEqual(["failed"]);
+    expect(ids(pickResendTargets(family, "undelivered"))).toEqual(["failed"]);
+  });
+
+  it("validates audience values from form input", () => {
+    expect(isReminderAudience("not_done")).toBe(true);
+    expect(isReminderAudience("toString")).toBe(false);
+    expect(isResendAudience("everyone")).toBe(true);
+    expect(isResendAudience("constructor")).toBe(false);
+  });
+
+  it("summarizes the dashboard", () => {
+    expect(summarize(family)).toEqual({ total: 5, signedIn: 4, emailed: 4, emailFailed: 1, done: 1, started: 1, notStarted: 3 });
+  });
+});
+
+describe("activity labels", () => {
+  it("reads like English and never needs pairing data", () => {
+    expect(describeAudit("sent", { sent: 12, failed: 0 })).toBe("Match emails sent (12 people)");
+    expect(describeAudit("resent_bulk", { count: 1 })).toBe("Resent match emails (1 person)");
+    expect(describeAudit("announced", { count: 12 })).toBe("Announcement sent (12 people)");
+    expect(describeAudit("something_new")).toBe("something new");
+  });
+});
+
+describe("notification emails", () => {
+  it("adds the organizer's note to reminders, escaped, with line breaks", () => {
+    const e = reminderEmail({ to: "a@b.c", name: "Bob", groupName: "Fam", link: "https://x", note: "Finish by Sunday!\n<script>alert(1)</script>" });
+    expect(e.html).toContain("Finish by Sunday!<br>&lt;script&gt;");
+    expect(e.html).not.toContain("<script>");
+    expect(e.text).toContain("From the organizer:\nFinish by Sunday!");
+    expect(reminderEmail({ to: "a@b.c", name: "Bob", groupName: "Fam", link: "https://x" }).html).not.toContain("From the organizer");
+  });
+
+  it("builds announcements without escaping the organizer's meaning, and escapes markup", () => {
+    const e = announcementEmail({ to: "a@b.c", name: "<b>Bob</b>", groupName: "Fam", subject: "Moved to <Saturday>", message: "See you\nat 5", link: "https://x" });
+    expect(e.subject).toBe("Moved to <Saturday>");
+    expect(e.html).toContain("Moved to &lt;Saturday&gt;");
+    expect(e.html).toContain("See you<br>at 5");
+    expect(e.html).not.toContain("<b>Bob");
+  });
+});
+
 describe("emailChangedNotice", () => {
   const e = emailChangedNotice({ to: "old@example.com", name: "<b>Sue", groupName: "Family <2026>", newEmail: "someone.new@example.com" });
   it("goes to the old address, masks the new one, and carries no link", () => {
@@ -292,4 +395,22 @@ describe("checkReveal", () => {
   });
   it("refuses a second reveal", () => expect(checkReveal({ ...sent, revealed_at: "2026-12-25T10:00:00Z" }, "2026-12-26").ok).toBe(false));
   it("reads today as a calendar date", () => expect(todayInEastern(new Date("2026-12-25T03:00:00Z"))).toBe("2026-12-24"));
+});
+
+describe("organizer page column access (security review M-2)", () => {
+  // The organizer's own login can read only the memberships columns granted in this migration.
+  const migration = readFileSync(new URL("../../../supabase/migrations/20261116000000_memberships_column_grants.sql", import.meta.url), "utf8");
+  const granted = /grant select \(([^)]*)\)\s+on public\.memberships to authenticated/.exec(migration)![1]!
+    .split(",")
+    .map((c) => c.trim());
+
+  it("only asks for columns the database allows, or the page renders empty", () => {
+    for (const column of ADMIN_MEMBER_COLUMNS.split(",").map((c) => c.trim())) {
+      expect(granted, `${column} is not granted to the organizer's login`).toContain(column);
+    }
+  });
+
+  it("never reads the columns that reveal whose match changed", () => {
+    expect(ADMIN_MEMBER_COLUMNS).not.toMatch(/match_email_sent_at|match_email_retry/);
+  });
 });

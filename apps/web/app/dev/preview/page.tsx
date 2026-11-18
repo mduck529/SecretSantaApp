@@ -104,7 +104,10 @@ const MEMBERS: AdminMember[] = [
   role: role as string,
   user_id: signedIn ? "x" : null,
   questionnaire_complete: done as boolean,
+  // Sam started but hasn't finished; Leo has nothing saved.
+  questionnaire_updated_at: done || i === 6 ? "2026-11-15T18:30:00Z" : null,
   match_email_status: i === 4 ? "failed" : "sent",
+  last_reminded_at: i === 2 ? "2026-11-17T16:00:00Z" : null,
 }));
 
 export default async function PreviewPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
@@ -135,6 +138,15 @@ export default async function PreviewPage({ searchParams }: { searchParams: Prom
             { id: "r1", a_id: MEMBERS[0]!.id, b_id: MEMBERS[3]!.id, two_way: true },
             { id: "r2", a_id: MEMBERS[4]!.id, b_id: MEMBERS[5]!.id, two_way: true },
           ]}
+          activity={
+            draft
+              ? []
+              : [
+                  { id: 3, label: "Questionnaire reminder sent (1 person)", actor: "Jamie Rivera", at: "2026-11-17T16:00:00Z" },
+                  { id: 2, label: "Match emails sent (7 people)", actor: "Jamie Rivera", at: "2026-11-20T19:30:00Z" },
+                  { id: 1, label: "Names matched (7 people)", actor: "Jamie Rivera", at: "2026-11-20T19:25:00Z" },
+                ]
+          }
         />
       </>
     );

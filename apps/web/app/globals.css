@@ -635,3 +635,12 @@ button.bracket-link:active:not(:disabled) { transform: none; box-shadow: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; transition-delay: 0s !important; }
 }
+
+/* Organizer: status summary and activity */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.75rem; margin: 0 0 0.75rem; }
+.stats div { border: 1px solid var(--line); border-radius: 10px; padding: 0.6rem 0.8rem; }
+.stats dt { font-size: 0.8rem; color: var(--muted); }
+.stats dd { margin: 0.15rem 0 0; font-size: 1.4rem; font-weight: 600; display: flex; gap: 0.4rem; align-items: baseline; flex-wrap: wrap; }
+.stats dd .muted { font-size: 0.9rem; font-weight: 400; }
+.activity { list-style: none; padding: 0; margin: 0.75rem 0 0; display: grid; gap: 0.5rem; }
+.activity li { display: flex; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 0.4rem; }

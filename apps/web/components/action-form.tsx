@@ -39,7 +39,8 @@ export function ActionForm({
       action={formAction}
       className={className}
       onSubmit={(e) => {
-        if (confirm && !window.confirm(confirm)) e.preventDefault();
+        const submitter = (e.nativeEvent as SubmitEvent).submitter;
+        if (confirm && !submitter?.hasAttribute("data-skip-confirm") && !window.confirm(confirm)) e.preventDefault();
       }}
     >
       {children}
@@ -52,10 +53,33 @@ export function ActionForm({
   );
 }
 
-export function SubmitButton({ children, className, pendingText }: { children: ReactNode; className?: string; pendingText?: string }) {
+export function SubmitButton({
+  children,
+  className,
+  pendingText,
+  name,
+  value,
+  skipConfirm,
+}: {
+  children: ReactNode;
+  className?: string;
+  pendingText?: string;
+  name?: string;
+  value?: string;
+  /** Don't show the form's confirm dialog for this button (e.g. "send me a test"). */
+  skipConfirm?: boolean;
+}) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" className={className} disabled={pending} aria-busy={pending}>
+    <button
+      type="submit"
+      className={className}
+      name={name}
+      value={value}
+      data-skip-confirm={skipConfirm ? "" : undefined}
+      disabled={pending}
+      aria-busy={pending}
+    >
       {pending ? (pendingText ?? "Working…") : children}
     </button>
   );

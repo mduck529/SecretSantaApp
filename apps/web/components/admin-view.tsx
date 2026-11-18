@@ -2,15 +2,28 @@ import Link from "next/link";
 import { ActionForm, SubmitButton } from "./action-form";
 import { Ornament } from "./festive/ornament";
 import { Wreath } from "./festive/wreath";
+import { LocalTime } from "./local-time";
 import { checkReveal } from "@/lib/reveal";
+import {
+  REMINDER_AUDIENCES,
+  REMINDER_COOLDOWN_MS,
+  RESEND_AUDIENCES,
+  pickReminderTargets,
+  pickResendTargets,
+  questionnaireState,
+  summarize,
+  type RecipientInfo,
+} from "@/lib/audience";
 import {
   addPersonAction,
   addRuleAction,
+  announceAction,
   matchAction,
   remindAction,
   removePersonAction,
   removeRuleAction,
   resendAction,
+  resendAllAction,
   revealAction,
   sendAction,
   settingsAction,
@@ -25,6 +38,9 @@ export interface AdminMember {
   user_id: string | null;
   questionnaire_complete: boolean;
   match_email_status: string | null;
+  /** Read on the server (see loadProgress), not by the organizer's own login. */
+  questionnaire_updated_at: string | null;
+  last_reminded_at: string | null;
 }
 
 export interface AdminViewProps {
@@ -43,18 +59,27 @@ export interface AdminViewProps {
   members: AdminMember[];
   phones: Record<string, string>;
   rules: { id: string; a_id: string; b_id: string; two_way: boolean }[];
+  /** Recent organizer actions, already worded. Never contains pairings. */
+  activity: { id: number; label: string; actor: string; at: string }[];
 }
 
 /**
  * The organizer's "Santa's Workshop". Receives only data the organizer may see
  * through Row Level Security (no matches, no answers), so it cannot show pairings.
  */
-export function AdminView({ groupId, group, members, phones, rules }: AdminViewProps) {
+export function AdminView({ groupId, group, members, phones, rules, activity }: AdminViewProps) {
   const nameOf = new Map(members.map((m) => [m.id, m.display_name]));
   const status = group.status;
   const reveal = checkReveal({ status, exchange_date: group.exchange_date, revealed_at: group.revealed_at });
   const done = members.filter((m) => m.questionnaire_complete).length;
   const incomplete = members.length - done;
+  // Status columns only (no matches, no answers), so these can't hint at a pairing.
+  const info = members as unknown as RecipientInfo[];
+  const summary = summarize(info);
+  const notDone = pickReminderTargets(info, "not_done", { includeRecent: true }).targets.length;
+  const notDoneFresh = pickReminderTargets(info, "not_done").targets.length;
+  const needsResend = pickResendTargets(info, "undelivered").length;
+  const notSignedIn = pickResendTargets(info, "not_signed_in").length;
   const enough = members.length >= 3;
   const hidden = (name: string, value: string) => <input type="hidden" name={name} value={value} />;
   const gid = hidden("group_id", groupId);
@@ -91,6 +116,40 @@ export function AdminView({ groupId, group, members, phones, rules }: AdminViewP
         ))}
       </ol>
 
+      {status === "sent" ? (
+        <section className="card" aria-label="Status">
+          <p className="eyebrow">Where things stand</p>
+          <dl className="stats">
+            <div>
+              <dt>Opened their link</dt>
+              <dd>
+                {summary.signedIn} <span className="muted">of {summary.total}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Match email delivered</dt>
+              <dd>
+                {summary.emailed} <span className="muted">of {summary.total}</span>
+                {summary.emailFailed ? <span className="badge no">{summary.emailFailed} failed</span> : null}
+              </dd>
+            </div>
+            <div>
+              <dt>Questionnaire done</dt>
+              <dd>
+                {summary.done} <span className="muted">of {summary.total}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Started, not finished</dt>
+              <dd>{summary.started}</dd>
+            </div>
+          </dl>
+          <p className="muted small">
+            This never shows who has whom or what anyone answered. &ldquo;Done&rdquo; means the required questions are answered.
+          </p>
+        </section>
+      ) : null}
+
       {/* 1 + 2: people and rules */}
       <section className="card">
         <p className="eyebrow">Step 1</p>
@@ -115,11 +174,18 @@ export function AdminView({ groupId, group, members, phones, rules }: AdminViewP
                       {m.email}
                       {phones[m.id] ? ` · ${phones[m.id]}` : ""}
                     </div>
+                    {m.last_reminded_at ? (
+                      <div className="muted small">
+                        Reminded <LocalTime iso={m.last_reminded_at} />
+                      </div>
+                    ) : null}
                   </div>
                   <div className="badges">
                     <span className={m.user_id ? "badge yes" : "badge"}>{m.user_id ? "✓ Signed in" : "Not signed in"}</span>
                     <span className={m.questionnaire_complete ? "badge yes" : "badge"}>
-                      {m.questionnaire_complete ? "✓ Questionnaire" : "No questionnaire"}
+                      {{ done: "✓ Questionnaire", started: "Questionnaire started", not_started: "No questionnaire" }[
+                        questionnaireState(m as unknown as RecipientInfo)
+                      ]}
                     </span>
                     {status === "sent" ? (
                       <span className={m.match_email_status === "failed" ? "badge no" : m.match_email_status === "sent" ? "badge yes" : "badge"}>
@@ -296,7 +362,7 @@ export function AdminView({ groupId, group, members, phones, rules }: AdminViewP
         {status === "sent" ? (
           <p>
             <strong>Sent ✓</strong>{" "}
-            {group.sent_at ? new Date(group.sent_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : ""}.
+            {group.sent_at ? <LocalTime iso={group.sent_at} /> : null}.
             Everyone got an email inviting them to unwrap their match and fill out their questionnaire.
           </p>
         ) : (
@@ -364,13 +430,116 @@ export function AdminView({ groupId, group, members, phones, rules }: AdminViewP
               ? "Every Santa has what they need."
               : `${incomplete} ${incomplete === 1 ? "person hasn't" : "people haven't"} filled theirs out yet.`}
           </p>
-          {incomplete > 0 ? (
-            <ActionForm action={remindAction} confirm={`Email a reminder to the ${incomplete} people who haven't filled theirs out?`}>
-              {gid}
-              <SubmitButton pendingText="Sending…">Remind everyone who hasn&apos;t</SubmitButton>
-            </ActionForm>
-          ) : null}
         </div>
+      </section>
+
+      {/* Notifications */}
+      <section className="card">
+        <p className="eyebrow">Notifications</p>
+
+        <h3>Remind people to fill out their questionnaire</h3>
+        <p className="muted">
+          {notDone === 0
+            ? "Everyone has filled out their questionnaire 🎉"
+            : `${notDone} of ${members.length} haven't finished. People reminded in the last ${REMINDER_COOLDOWN_MS / 3600000} hours are skipped unless you tick the box.`}
+        </p>
+        {notDone > 0 ? (
+          <ActionForm action={remindAction} className="stack compact" confirm="Send these reminder emails now?">
+            {gid}
+            <label>
+              Who
+              <select name="audience" defaultValue="not_done">
+                {Object.entries(REMINDER_AUDIENCES).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Add a note (optional)
+              <textarea name="note" rows={2} maxLength={500} placeholder="e.g. Please finish by Sunday so we can all shop!" />
+            </label>
+            <label className="small check">
+              <input type="checkbox" name="include_recent" /> Include people reminded recently
+              {notDone !== notDoneFresh ? ` (${notDone - notDoneFresh} right now)` : ""}
+            </label>
+            <SubmitButton pendingText="Sending…">Send reminders</SubmitButton>
+          </ActionForm>
+        ) : null}
+
+        <h3>Send the match emails again</h3>
+        {status === "sent" ? (
+          <>
+            <p className="muted">
+              For anyone who lost their email or never got it. Each person gets a fresh link to their own match.
+              {needsResend ? ` ${needsResend} ${needsResend === 1 ? "email" : "emails"} failed or never went out.` : ""}
+              {notSignedIn ? ` ${notSignedIn} ${notSignedIn === 1 ? "person hasn't" : "people haven't"} opened their link yet.` : ""}
+            </p>
+            <ActionForm action={resendAllAction} className="stack compact" confirm="Resend match emails to the people you picked?">
+              {gid}
+              <label>
+                Who
+                <select name="audience" defaultValue={needsResend ? "undelivered" : notSignedIn ? "not_signed_in" : "everyone"}>
+                  {Object.entries(RESEND_AUDIENCES).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <SubmitButton pendingText="Sending…">Resend match emails</SubmitButton>
+            </ActionForm>
+          </>
+        ) : (
+          <p className="muted">Available after you press Send.</p>
+        )}
+
+        <h3>Announcement to everyone</h3>
+        <p className="muted">Your own message, for things like &ldquo;exchange is moved to Saturday.&rdquo; It never includes anyone&apos;s match.</p>
+        <ActionForm action={announceAction} className="stack compact" confirm={`Email this to all ${members.length} people now?`}>
+          {gid}
+          <label>
+            Subject
+            <input name="subject" required maxLength={100} autoComplete="off" />
+          </label>
+          <label>
+            Message
+            <textarea name="message" rows={4} required maxLength={2000} />
+          </label>
+          {/* Keep these names distinct from the Send step's "Send to everyone" button (e2e clicks it by name). */}
+          <div className="row actions">
+            <SubmitButton name="intent" value="test" skipConfirm pendingText="Sending…">
+              Send me a test copy
+            </SubmitButton>
+            <SubmitButton className="primary" name="intent" value="send" pendingText="Sending…">
+              Send announcement
+            </SubmitButton>
+          </div>
+        </ActionForm>
+      </section>
+
+      {/* Activity */}
+      <section className="card">
+        <details>
+          <summary>
+            <h2 className="inline-heading">Recent activity</h2>
+          </summary>
+          {activity.length ? (
+            <ul className="activity">
+              {activity.map((a) => (
+                <li key={a.id}>
+                  <span>{a.label}</span>
+                  <span className="muted small">
+                    {a.actor} · <LocalTime iso={a.at} />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">Nothing yet.</p>
+          )}
+        </details>
       </section>
 
       {/* Settings */}
