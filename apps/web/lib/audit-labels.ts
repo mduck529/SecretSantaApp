@@ -23,10 +23,6 @@ export function describeAudit(action: string, details: Record<string, unknown> =
       return `Resent match emails${people(n(details.count))}`;
     case "reminded":
       return `Questionnaire reminder sent${people(n(details.count))}`;
-    case "auto_reminded":
-      return `Automatic reminder sent${people(n(details.count))}`;
-    case "auto_remind_changed":
-      return details.enabled ? "Automatic reminders turned on" : "Automatic reminders turned off";
     case "announced":
       return `Announcement sent${people(n(details.count))}`;
     case "member_added":

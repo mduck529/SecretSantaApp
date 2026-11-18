@@ -176,7 +176,7 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 | 1.5 Questionnaire (16 questions, 3 required, partial saves) | Built |
 | 1.6 "Your giftee updated their profile" emails (sent on save, 30-min throttle, daily sweep) | Built |
 | 1.7 Email templates (match, changed match, update, reminder) | Built; unit-tested incl. HTML escaping |
-| 1.4c Notification tools: targeted reminders (not started / unfinished, optional note, 24h cooldown), bulk resend of match emails (everyone / not opened / failed), announcement to everyone, optional automatic reminders, status summary, activity log | Built; unit-tested, privacy tests extended (`20261118000000_notification_tools.sql`) |
+| 1.4c Notification tools: targeted reminders (not started / unfinished, optional note, 24h cooldown), bulk resend of match emails (everyone / not opened / failed), announcement to everyone (with a test copy to yourself first), status summary, activity log, times shown in your own timezone | Built; unit-tested. Reminders stay manual by design |
 | 1.9 End-to-end test | Waiting on Supabase project (local Supabase images are blocked in this build environment) |
 
 ### Phase 0 — Foundation (Sat–Sun Nov 7–8)

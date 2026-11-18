@@ -64,7 +64,7 @@ In Vercel → Project → **Settings → Environment Variables**, add (for Produ
 | `RESEND_API_KEY` | Resend API key |
 | `EMAIL_FROM` | `Family Secret Santa <santa@YOUR-DOMAIN>` |
 | `APP_URL` | `https://YOUR-DOMAIN` |
-| `CRON_SECRET` | Any long random string (protects the daily job: held-back "giftee updated" emails and, if the organizer turns them on, automatic reminders) |
+| `CRON_SECRET` | Any long random string (protects the email-sending job) |
 
 Then **Deployments → ⋯ → Redeploy**.
 

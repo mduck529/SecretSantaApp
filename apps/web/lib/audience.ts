@@ -11,7 +11,6 @@ export interface RecipientInfo {
   questionnaire_updated_at: string | null;
   last_reminded_at: string | null;
   match_email_status: "not_sent" | "sent" | "failed";
-  auto_reminder_count: number;
 }
 
 export type QuestionnaireState = "done" | "started" | "not_started";
@@ -86,35 +85,6 @@ export function pickResendTargets<T extends RecipientInfo>(members: readonly T[]
     case "undelivered":
       return members.filter((m) => m.match_email_status !== "sent");
   }
-}
-
-// --- Automatic reminders -----------------------------------------------------
-
-export const AUTO_REMIND = {
-  /** Wait this long after Send before the first automatic reminder. */
-  firstAfterMs: 2 * 24 * 60 * 60 * 1000,
-  /** Then at most one every 3 days. */
-  everyMs: 3 * 24 * 60 * 60 * 1000,
-  /** Stop after this many, however long the exchange is away. */
-  maxReminders: 3,
-} as const;
-
-/**
- * True when the daily job should send this person an automatic reminder.
- * Never after the exchange date, never to people who finished, never to someone
- * a human reminded recently.
- */
-export function isAutoReminderDue(
-  group: { auto_remind: boolean; status: string; sent_at: string | null; exchange_date: string | null },
-  m: RecipientInfo,
-  now: number,
-): boolean {
-  if (!group.auto_remind || group.status !== "sent" || !group.sent_at) return false;
-  if (m.questionnaire_complete || m.auto_reminder_count >= AUTO_REMIND.maxReminders) return false;
-  if (group.exchange_date && now >= Date.parse(`${group.exchange_date}T23:59:59Z`)) return false;
-  if (now - Date.parse(group.sent_at) < AUTO_REMIND.firstAfterMs) return false;
-  const last = m.last_reminded_at ? Date.parse(m.last_reminded_at) : null;
-  return last === null || now - last >= AUTO_REMIND.everyMs;
 }
 
 // --- Dashboard summary -------------------------------------------------------

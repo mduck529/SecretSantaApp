@@ -94,12 +94,7 @@ export async function resendAllAction(_p: ActionState, fd: FormData): Promise<Ac
 
 export async function announceAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   const { groupId, actor } = await ctx(fd);
-  return done(groupId, await notify.sendAnnouncement(groupId, actor, { subject: str(fd, "subject"), message: str(fd, "message") }));
-}
-
-export async function autoRemindAction(_p: ActionState, fd: FormData): Promise<ActionState> {
-  const { groupId, actor } = await ctx(fd);
-  return done(groupId, await notify.setAutoRemind(groupId, actor, fd.get("enabled") === "1"));
+  return done(groupId, await notify.sendAnnouncement(groupId, actor, { subject: str(fd, "subject"), message: str(fd, "message"), testOnly: fd.get("intent") === "test" }));
 }
 
 export async function settingsAction(_p: ActionState, fd: FormData): Promise<ActionState> {

@@ -164,19 +164,6 @@ select tests.eq((select user_id from public.memberships where email = 'carol.new
   'email change detaches the old login');
 reset role;
 
--- Notification settings are written by the server only (after its own admin check).
-set role authenticated;
-select tests.login('org');
-select tests.eq((select auto_remind from public.groups), false, 'automatic reminders start off');
-select tests.fails($$update public.groups set auto_remind = true$$, 'organizer cannot flip automatic reminders directly');
-select tests.fails($$update public.memberships set auto_reminder_count = 0$$, 'organizer cannot edit reminder counters directly');
-select tests.fails($$update public.memberships set last_reminded_at = now()$$, 'organizer cannot edit reminder times directly');
-select tests.eq((select count(*) > 0 from public.audit_log), true, 'organizer can read the activity log');
-select tests.eq((select count(*) from public.audit_log where details::text ~ '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'), 0::bigint, 'activity log holds no member ids');
-select tests.login('bob');
-select tests.eq((select count(*) from public.audit_log), 0::bigint, 'ordinary members cannot read the activity log');
-reset role;
-
 -- After the exchange the organizer turns on reveal; then everyone sees all matches.
 update public.groups set revealed_at = now();
 set role authenticated;

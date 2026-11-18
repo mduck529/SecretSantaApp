@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { explainProblem, formatExchangeDate, groupBudget, normalizeEmail, normalizePhone } from "@/lib/group-service";
 import { announcementEmail, matchEmail, profileUpdatedEmail, reminderEmail } from "@/lib/email/templates";
 import {
-  isAutoReminderDue,
   isReminderAudience,
   isResendAudience,
   pickReminderTargets,
@@ -12,7 +11,6 @@ import {
   type RecipientInfo,
 } from "@/lib/audience";
 import { describeAudit } from "@/lib/audit-labels";
-import { timeAgo } from "@/lib/time-ago";
 import { safeNext } from "@/lib/auth";
 
 describe("normalizePhone", () => {
@@ -118,7 +116,6 @@ describe("reminder and resend audiences", () => {
     questionnaire_updated_at: null,
     last_reminded_at: null,
     match_email_status: "sent",
-    auto_reminder_count: 0,
     ...over,
   });
   const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
@@ -160,31 +157,6 @@ describe("reminder and resend audiences", () => {
     expect(isResendAudience("constructor")).toBe(false);
   });
 
-  describe("automatic reminders", () => {
-    const sentAt = new Date(now - 3 * day).toISOString();
-    const group = { auto_remind: true, status: "sent", sent_at: sentAt, exchange_date: "2026-12-25" };
-    it("waits two days after Send, then reminds", () => {
-      expect(isAutoReminderDue(group, person("a"), now)).toBe(true);
-      expect(isAutoReminderDue({ ...group, sent_at: new Date(now - day).toISOString() }, person("a"), now)).toBe(false);
-    });
-    it("is off unless the organizer turned it on and matches were sent", () => {
-      expect(isAutoReminderDue({ ...group, auto_remind: false }, person("a"), now)).toBe(false);
-      expect(isAutoReminderDue({ ...group, status: "matched" }, person("a"), now)).toBe(false);
-    });
-    it("leaves finished people alone", () => {
-      expect(isAutoReminderDue(group, person("a", { questionnaire_complete: true }), now)).toBe(false);
-    });
-    it("spaces reminders three days apart, including manual ones, and stops after three", () => {
-      expect(isAutoReminderDue(group, person("a", { last_reminded_at: new Date(now - day).toISOString() }), now)).toBe(false);
-      expect(isAutoReminderDue(group, person("a", { last_reminded_at: new Date(now - 3 * day).toISOString() }), now)).toBe(true);
-      expect(isAutoReminderDue(group, person("a", { auto_reminder_count: 3 }), now)).toBe(false);
-    });
-    it("stops after the exchange date", () => {
-      expect(isAutoReminderDue({ ...group, exchange_date: "2026-11-19" }, person("a"), now)).toBe(false);
-      expect(isAutoReminderDue({ ...group, exchange_date: "2026-11-20" }, person("a"), now)).toBe(true);
-    });
-  });
-
   it("summarizes the dashboard", () => {
     expect(summarize(family)).toEqual({ total: 5, signedIn: 4, emailed: 4, emailFailed: 1, done: 1, started: 1, notStarted: 3 });
   });
@@ -194,20 +166,9 @@ describe("activity labels", () => {
   it("reads like English and never needs pairing data", () => {
     expect(describeAudit("sent", { sent: 12, failed: 0 })).toBe("Match emails sent (12 people)");
     expect(describeAudit("resent_bulk", { count: 1 })).toBe("Resent match emails (1 person)");
-    expect(describeAudit("auto_remind_changed", { enabled: true })).toBe("Automatic reminders turned on");
+    expect(describeAudit("announced", { count: 12 })).toBe("Announcement sent (12 people)");
     expect(describeAudit("something_new")).toBe("something new");
   });
-});
-
-describe("timeAgo", () => {
-  const now = Date.parse("2026-11-20T12:00:00Z");
-  it.each([
-    ["2026-11-20T11:59:30Z", "just now"],
-    ["2026-11-20T11:15:00Z", "45 min ago"],
-    ["2026-11-20T07:00:00Z", "5 h ago"],
-    ["2026-11-19T11:00:00Z", "1 day ago"],
-    ["2026-11-15T12:00:00Z", "5 days ago"],
-  ])("%s -> %s", (iso, expected) => expect(timeAgo(iso, now)).toBe(expected));
 });
 
 describe("notification emails", () => {

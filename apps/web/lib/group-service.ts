@@ -33,8 +33,6 @@ export interface Group {
   id: string;
   name: string;
   status: "draft" | "matched" | "sent";
-  sent_at: string | null;
-  auto_remind: boolean;
   budget_min_cents: number;
   budget_max_cents: number;
   exchange_date: string | null;
@@ -69,7 +67,7 @@ export async function assertAdmin(db: Db, groupId: string, actorUserId: string) 
 export async function loadGroup(db: Db, groupId: string): Promise<Group> {
   const { data, error } = await db
     .from("groups")
-    .select("id, name, status, sent_at, auto_remind, budget_min_cents, budget_max_cents, exchange_date")
+    .select("id, name, status, budget_min_cents, budget_max_cents, exchange_date")
     .eq("id", groupId)
     .single();
   if (error) throw error;

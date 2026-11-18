@@ -4,7 +4,6 @@ import { signInLink } from "./links";
 import { sendEmails, type OutgoingEmail } from "./email/send";
 import { announcementEmail, reminderEmail } from "./email/templates";
 import {
-  isAutoReminderDue,
   pickReminderTargets,
   pickResendTargets,
   type RecipientInfo,
@@ -23,7 +22,7 @@ import { asOutcome, assertAdmin, audit, emailMatches, loadGroup, type Db, type O
 type Recipient = RecipientInfo & { email: string };
 
 const RECIPIENT_COLUMNS =
-  "id, display_name, email, user_id, questionnaire_complete, questionnaire_updated_at, last_reminded_at, match_email_status, auto_reminder_count";
+  "id, display_name, email, user_id, questionnaire_complete, questionnaire_updated_at, last_reminded_at, match_email_status";
 
 async function loadRecipients(db: Db, groupId: string): Promise<Recipient[]> {
   const { data, error } = await db.from("memberships").select(RECIPIENT_COLUMNS).eq("group_id", groupId).order("created_at");
@@ -150,11 +149,11 @@ export async function resendMatches(groupId: string, actorUserId: string, audien
 export const ANNOUNCEMENT_SUBJECT_MAX = 100;
 export const ANNOUNCEMENT_MESSAGE_MAX = 2000;
 
-/** A message from the organizer to everyone in the group. */
+/** A message from the organizer to everyone in the group, or (`testOnly`) just a test copy to the organizer. */
 export async function sendAnnouncement(
   groupId: string,
   actorUserId: string,
-  input: { subject: string; message: string },
+  input: { subject: string; message: string; testOnly?: boolean },
 ): Promise<Outcome> {
   const db = createAdminClient();
   try {
@@ -169,7 +168,9 @@ export async function sendAnnouncement(
     }
 
     const group = await loadGroup(db, groupId);
-    const members = await loadRecipients(db, groupId);
+    const everyone = await loadRecipients(db, groupId);
+    const members = input.testOnly ? everyone.filter((m) => m.user_id === actorUserId) : everyone;
+    if (input.testOnly && !members.length) return { ok: false, message: "Couldn't find your own entry in the group." };
     const emails: OutgoingEmail[] = [];
     for (const m of members) {
       emails.push(
@@ -177,13 +178,18 @@ export async function sendAnnouncement(
           to: m.email,
           name: m.display_name,
           groupName: group.name,
-          subject,
+          subject: input.testOnly ? `[Test] ${subject}` : subject,
           message,
           link: await signInLink(m.email, `/g/${groupId}`),
         }),
       );
     }
     const results = await sendEmails(emails);
+    if (input.testOnly) {
+      return results[0]
+        ? { ok: true, message: `Test sent to ${members[0]!.email} ✓ Nobody else has received it.` }
+        : { ok: false, message: "The test email couldn't be sent." };
+    }
     const sent = results.filter(Boolean).length;
     const failed = members.filter((_, i) => !results[i]).map((m) => m.display_name);
     await audit(db, groupId, actorUserId, "announced", { count: sent, failed: failed.length });
@@ -194,72 +200,4 @@ export async function sendAnnouncement(
   } catch (err) {
     return asOutcome(err);
   }
-}
-
-// ---------------------------------------------------------------------------
-// Automatic reminders
-// ---------------------------------------------------------------------------
-
-export async function setAutoRemind(groupId: string, actorUserId: string, enabled: boolean): Promise<Outcome> {
-  const db = createAdminClient();
-  try {
-    await assertAdmin(db, groupId, actorUserId);
-    const { error } = await db.from("groups").update({ auto_remind: enabled }).eq("id", groupId);
-    if (error) throw error;
-    await audit(db, groupId, actorUserId, "auto_remind_changed", { enabled });
-    return {
-      ok: true,
-      message: enabled ? "Automatic reminders are on." : "Automatic reminders are off.",
-    };
-  } catch (err) {
-    return asOutcome(err);
-  }
-}
-
-/**
- * Daily job: sends automatic reminders for every group that turned them on.
- * Returns how many reminders went out. See `isAutoReminderDue` for the schedule.
- */
-export async function runAutoReminders(now = Date.now()): Promise<number> {
-  const db = createAdminClient();
-  const { data: groups, error } = await db
-    .from("groups")
-    .select("id, name, status, sent_at, auto_remind, exchange_date")
-    .eq("auto_remind", true)
-    .eq("status", "sent");
-  if (error) throw error;
-
-  let total = 0;
-  for (const group of groups) {
-    try {
-      const due = (await loadRecipients(db, group.id as string)).filter((m) =>
-        isAutoReminderDue(
-          {
-            auto_remind: group.auto_remind as boolean,
-            status: group.status as string,
-            sent_at: group.sent_at as string | null,
-            exchange_date: group.exchange_date as string | null,
-          },
-          m,
-          now,
-        ),
-      );
-      if (!due.length) continue;
-      const byId = new Map(due.map((m) => [m.id, m]));
-      const result = await deliverReminders(db, { id: group.id as string, name: group.name as string }, due, undefined, async (okIds, sentAt) => {
-        for (const id of okIds) {
-          await db
-            .from("memberships")
-            .update({ last_reminded_at: sentAt, auto_reminder_count: (byId.get(id)?.auto_reminder_count ?? 0) + 1 })
-            .eq("id", id);
-        }
-      });
-      if (result.sent) await audit(db, group.id as string, null, "auto_reminded", { count: result.sent });
-      total += result.sent;
-    } catch (err) {
-      // One group's failure must not stop the others.
-      console.error("runAutoReminders", group.id, err);
-    }
-  }
-  return total;
 }

@@ -3,7 +3,6 @@ import { ActionForm, SubmitButton } from "@/components/action-form";
 import { requireAdmin } from "@/lib/auth";
 import { formatExchangeDate, groupBudget } from "@/lib/group-service";
 import {
-  AUTO_REMIND,
   REMINDER_AUDIENCES,
   REMINDER_COOLDOWN_MS,
   RESEND_AUDIENCES,
@@ -14,12 +13,11 @@ import {
   type RecipientInfo,
 } from "@/lib/audience";
 import { describeAudit } from "@/lib/audit-labels";
-import { timeAgo } from "@/lib/time-ago";
+import { LocalTime } from "@/components/local-time";
 import {
   addPersonAction,
   addRuleAction,
   announceAction,
-  autoRemindAction,
   matchAction,
   remindAction,
   removePersonAction,
@@ -44,13 +42,13 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   const [{ data: group }, { data: members }, { data: contacts }, { data: rules }, { data: activity }] = await Promise.all([
     supabase
       .from("groups")
-      .select("name, status, budget_min_cents, budget_max_cents, exchange_date, sent_at, auto_remind")
+      .select("name, status, budget_min_cents, budget_max_cents, exchange_date, sent_at")
       .eq("id", groupId)
       .single(),
     supabase
       .from("memberships")
       .select(
-        "id, display_name, email, role, user_id, questionnaire_complete, questionnaire_updated_at, match_email_status, match_email_sent_at, last_reminded_at, auto_reminder_count",
+        "id, display_name, email, role, user_id, questionnaire_complete, questionnaire_updated_at, match_email_status, match_email_sent_at, last_reminded_at",
       )
       .eq("group_id", groupId)
       .order("created_at"),
@@ -155,8 +153,8 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
                     </div>
                     {status === "sent" ? (
                       <div className="muted small">
-                        {m.match_email_sent_at ? `Match email ${timeAgo(m.match_email_sent_at, now)}` : "No match email yet"}
-                        {m.last_reminded_at ? ` · reminded ${timeAgo(m.last_reminded_at, now)}` : ""}
+                        {m.match_email_sent_at ? <>Match email <LocalTime iso={m.match_email_sent_at as string} /></> : "No match email yet"}
+                        {m.last_reminded_at ? <> · reminded <LocalTime iso={m.last_reminded_at as string} /></> : null}
                       </div>
                     ) : null}
                   </div>
@@ -325,7 +323,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
         {status === "sent" ? (
           <p>
             <strong>Sent ✓</strong>{" "}
-            {group.sent_at ? new Date(group.sent_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : ""}.
+            {group.sent_at ? <LocalTime iso={group.sent_at as string} /> : null}.
             Everyone got an email with who they&apos;re buying for and a link to fill out their questionnaire.
           </p>
         ) : (
@@ -424,19 +422,14 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
             Message
             <textarea name="message" rows={4} required maxLength={2000} />
           </label>
-          <SubmitButton pendingText="Sending…">Send announcement</SubmitButton>
-        </ActionForm>
-
-        <h3>Automatic reminders</h3>
-        <p className="muted">
-          {group.auto_remind
-            ? `On. Anyone who hasn't finished gets a reminder ${AUTO_REMIND.firstAfterMs / 86400000} days after Send, then every ${AUTO_REMIND.everyMs / 86400000} days, up to ${AUTO_REMIND.maxReminders} times. They stop on the exchange date or once someone finishes.`
-            : "Off. Turn on to nudge anyone who hasn't finished automatically. Nothing is sent until matches have gone out."}
-        </p>
-        <ActionForm action={autoRemindAction}>
-          {gid}
-          {hidden("enabled", group.auto_remind ? "0" : "1")}
-          <SubmitButton>{group.auto_remind ? "Turn off automatic reminders" : "Turn on automatic reminders"}</SubmitButton>
+          <div className="row actions">
+            <SubmitButton name="intent" value="test" skipConfirm pendingText="Sending…">
+              Send me a test copy
+            </SubmitButton>
+            <SubmitButton className="primary" name="intent" value="send" pendingText="Sending…">
+              Send to everyone
+            </SubmitButton>
+          </div>
         </ActionForm>
       </section>
 
@@ -453,7 +446,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
                   <span>{describeAudit(a.action as string, (a.details ?? {}) as Record<string, unknown>)}</span>
                   <span className="muted small">
                     {a.actor_user_id ? `${actorName.get(a.actor_user_id as string) ?? "An organizer"} · ` : "Automatic · "}
-                    {timeAgo(a.created_at as string, now)}
+                    <LocalTime iso={a.created_at as string} />
                   </span>
                 </li>
               ))}
