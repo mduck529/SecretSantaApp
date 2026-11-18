@@ -158,7 +158,8 @@ test("organizer runs a draw and the family uses it, without anyone seeing who ha
   await benPage.getByLabel(/free afternoon/).fill("Fishing and woodworking");
   await benPage.getByLabel(/always make you happy/).fill("Dark roast coffee");
   await benPage.getByRole("button", { name: "Save & continue" }).click();
-  await expect(benPage.locator(".wizard").getByRole("status")).toContainText("Saved");
+  // The squishy bracket has its own status line ("Match 1 of 5"), so pick the save message.
+  await expect(benPage.locator(".wizard").getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
 
   // Exactly one Santa is told (Ben's), and the email doesn't name Ben.
   const updatedSubject = /The person you're buying for updated their questionnaire/;
