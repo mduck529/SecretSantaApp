@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img"><title>Vaseline-filled squishy</title><defs><radialGradient id="bg" cx="50%" cy="35%" r="80%"><stop offset="0" stop-color="#fffaf0"/><stop offset="1" stop-color="#f6e6c8"/></radialGradient></defs><rect width="200" height="200" rx="28" fill="url(#bg)"/><circle cx="26" cy="28" r="3" fill="#e6bf66"/><circle cx="176" cy="40" r="2.5" fill="#e0505f" opacity=".6"/><circle cx="170" cy="168" r="3" fill="#1f4d3a" opacity=".35"/><circle cx="30" cy="160" r="2" fill="#c4912c" opacity=".6"/>
+<defs><linearGradient id="v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f58a97"/><stop offset=".55" stop-color="#d93a52"/><stop offset="1" stop-color="#a51c30"/></linearGradient>
+<radialGradient id="vg" cx="35%" cy="30%" r="70%"><stop offset="0" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
+<ellipse cx="100" cy="166" rx="56" ry="8" fill="#7a2030" opacity=".2"/>
+<path d="M100 160 C40 124 28 94 40 72 C54 48 88 52 100 76 C112 52 146 48 160 72 C172 94 160 124 100 160 Z" fill="url(#v)"/>
+<path d="M100 160 C40 124 28 94 40 72 C54 48 88 52 100 76 C112 52 146 48 160 72 C172 94 160 124 100 160 Z" fill="url(#vg)"/>
+<path d="M50 78 C54 66 66 62 78 66" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" opacity=".9"/>
+<ellipse cx="62" cy="92" rx="4" ry="6" fill="#fff" opacity=".7" transform="rotate(-20 62 92)"/>
+<path d="M132 70 C142 70 150 78 150 88" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity=".55"/>
+<g fill="#ffd9de" opacity=".85"><circle cx="124" cy="132" r="3.4"/><circle cx="76" cy="136" r="2.4"/><circle cx="138" cy="104" r="2"/></g>
+<path d="M142 120 C150 128 152 142 148 154 C146 162 152 164 156 156 C162 140 156 122 148 114 Z" fill="#d93a52" opacity="0"/>
+<path d="M118 138 C130 138 136 146 136 156 C136 164 139 168 135 173 C129 178 122 173 124 165 C126 156 118 152 112 146 Z" fill="#b92a40"/><path d="M129 150 C130 156 130 162 130 166" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".6"/>
+<g transform="translate(100 106) scale(1.15)"><ellipse cx="-16" cy="0" rx="3.4" ry="4.2" fill="#4a2f27"/><ellipse cx="16" cy="0" rx="3.4" ry="4.2" fill="#4a2f27"/><circle cx="-15" cy="-1.6" r="1.2" fill="#fff"/><circle cx="17" cy="-1.6" r="1.2" fill="#fff"/><path d="M-5 5 Q0 11 5 5" fill="none" stroke="#4a2f27" stroke-width="2.4" stroke-linecap="round"/><ellipse cx="-25" cy="7" rx="6" ry="3.6" fill="#e0505f" opacity=".45"/><ellipse cx="25" cy="7" rx="6" ry="3.6" fill="#e0505f" opacity=".45"/></g>
+</svg>

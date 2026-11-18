@@ -12,7 +12,7 @@ import { DIY_IDEA_COUNT, RETAIL_IDEA_COUNT } from "./schema.js";
  * Bump when the prompt or schema changes in a way that should refresh stored ideas.
  * Stored in `gift_suggestions.prompt_version`.
  */
-export const GIFT_PROMPT_VERSION = "gift-ideas-v2";
+export const GIFT_PROMPT_VERSION = "gift-ideas-v3";
 
 /** Runtime model (docs/PLAN.md: Sonnet 5.5 runs gift recommendations). */
 export const GIFT_MODEL = "claude-sonnet-5-5";
@@ -40,6 +40,7 @@ What makes a good set:
 - When they gave several interests, spread the five ideas across them instead of five takes on one.
 - Use their sizes only for clothing or shoes, and say the size in the reason ("in their size M").
 - Respect hints like "no clutter", "consumables only" or "I have everything": favor consumables, experiences (if allowed), and nicer versions of things they use every day.
+- A favorite squishy style (squishy_favorite) is a strong gift hint: suggest a squishy of that style when it fits the budget. Ignore it if they answered "Not into squishies".
 - Suggest alcohol only if they name a drink they enjoy. Never suggest diet, weight-loss, or self-improvement gifts unless they asked for them.
 - Wish list links cannot be opened. You may use the words in a link to understand their taste, but suggest your own ideas within the budget.
 - DIY ideas must be doable by an ordinary adult in a home kitchen or at a table, with no special tools. Materials are things a craft, hardware, or grocery store sells. Be honest about difficulty and time, and explain how to make it in one or two plain sentences.

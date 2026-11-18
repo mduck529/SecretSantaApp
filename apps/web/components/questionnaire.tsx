@@ -1,4 +1,4 @@
-import { BOTH, NEITHER, QUESTIONNAIRE, THIS_OR_THAT, wishlistLinks, type Answers, type Question } from "@santa/core";
+import { BOTH, NEITHER, QUESTIONNAIRE, THIS_OR_THAT, squishyFavorite, wishlistLinks, type Answers, type Question } from "@santa/core";
 
 /** Answers that a Santa must not miss, shown first in a "heads up" note. */
 const HEADS_UP = new Set(["please_no", "allergies"]);
@@ -104,7 +104,8 @@ function prettyLink(href: string) {
  */
 function ThisOrThatAnswers({ title, answers }: { title: string; answers: Answers }) {
   const answered = THIS_OR_THAT.filter((q) => answers[q.key]);
-  if (!answered.length) return null;
+  const squishy = squishyFavorite(answers); // nothing for "Not into squishies" or blank
+  if (!answered.length && !squishy) return null;
   return (
     <section className="file-section">
       <h3>{title}</h3>
@@ -127,6 +128,17 @@ function ThisOrThatAnswers({ title, answers }: { title: string; answers: Answers
           );
         })}
       </ul>
+      {squishy ? (
+        <div className="squishy-fav">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={squishy.image} alt="" width={72} height={72} loading="lazy" />
+          <span>
+            <span className="squishy-fav-label">Favorite squishy</span>
+            <span className="squishy-fav-name">{squishy.label}</span>
+            <span className="squishy-fav-blurb">{squishy.blurb}</span>
+          </span>
+        </div>
+      ) : null}
     </section>
   );
 }

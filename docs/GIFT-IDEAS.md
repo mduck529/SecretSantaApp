@@ -299,4 +299,4 @@ help the Santa get to know the giftee, drawn from their this-or-that picks and w
 It refers to them as "they" (the model never sees a name) and leaves out "Please no", allergies
 and sizes. The validator requires 1-500 characters and no links; a bad nutshell is dropped on its
 own without throwing away the ideas. Santa's file shows it above the giftee's exact answers.
-Prompt version `gift-ideas-v2` regenerates stored rows.
+Prompt version `gift-ideas-v3` regenerates stored rows.

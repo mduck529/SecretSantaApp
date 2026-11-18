@@ -40,6 +40,7 @@ const SUE: Answers = {
   gadgets_handmade: "Handmade",
   keep_or_do: "Something to do",
   real_fake_tree: "Real tree",
+  squishy_favorite: "Vaseline-filled",
   shirt_size: "M",
   pants_size: "8",
   shoe_size: "US women's 7.5",

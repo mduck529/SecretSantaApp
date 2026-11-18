@@ -542,6 +542,43 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 }
 .tot-small input:checked + span { background: var(--pine); border-color: var(--pine); color: var(--card); }
 
+/* Squishy showdown (a bracket of this-or-that cards) */
+.bracket { gap: 0.6rem; }
+.bracket-intro { margin: 0; font-family: var(--hand); font-weight: 700; font-size: 1.4rem; line-height: 1.15; color: var(--berry); scroll-margin: 6rem; }
+.bracket-intro:focus, .bracket-trophy:focus { outline: none; }
+.bracket-status { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.bracket-count { font-weight: 800; font-size: 0.95rem; }
+.bracket-round { font-weight: 600; color: var(--muted); }
+.bracket-dots { display: inline-flex; gap: 0.35rem; }
+.bracket-dots i { width: 0.7rem; height: 0.7rem; border-radius: 50%; border: 2px solid var(--line); background: var(--field); }
+.bracket-dots i.done { background: var(--pine); border-color: var(--pine); }
+.bracket-dots i.now { border-color: var(--berry); background: var(--berry); transform: scale(1.2); }
+.bracket-pair { align-items: stretch; animation: bracket-in 0.28s ease-out; }
+.bracket-pair .tot-or { align-self: center; }
+@keyframes bracket-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+button.bracket-option {
+  display: block; width: 100%; min-height: 0; padding: 0; border: 0; border-radius: 16px; background: none; box-shadow: none;
+  color: inherit; font: inherit; font-weight: 700; text-align: center; transition: none;
+}
+button.bracket-option:active:not(:disabled) { transform: none; box-shadow: none; }
+button.bracket-option:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.bracket-card { align-content: start; height: 100%; padding: 0.55rem 0.5rem 0.75rem; gap: 0.3rem; }
+.bracket-option:hover .bracket-card { border-color: var(--berry); background: var(--card); }
+.bracket-option:active .bracket-card { background: var(--berry); border-color: var(--berry); color: var(--on-berry); transform: scale(0.98); }
+.bracket-img { display: block; width: 100%; max-width: 8.5rem; height: auto; aspect-ratio: 1; border-radius: 12px; background: var(--card); }
+.bracket-name { font-family: var(--display); font-size: 1.02rem; line-height: 1.15; overflow-wrap: anywhere; }
+.bracket-blurb { font-weight: 500; font-size: 0.8rem; line-height: 1.25; color: var(--muted); margin: 0; }
+.bracket-option:active .bracket-blurb { color: inherit; }
+.bracket-wait { margin: 0; text-align: center; font-size: 0.85rem; color: var(--muted); }
+.bracket-actions { align-items: center; gap: 1.25rem; }
+button.bracket-link { min-height: 40px; padding: 0 0.4rem; border: 0; background: none; box-shadow: none; font-size: 0.95rem; }
+button.bracket-link:active:not(:disabled) { transform: none; box-shadow: none; }
+.bracket-result { display: grid; justify-items: center; gap: 0.5rem; text-align: center; }
+.bracket-trophy { margin: 0; font-family: var(--display); font-size: 1.3rem; line-height: 1.2; color: var(--pine); }
+.bracket-img-win { max-width: 11rem; border: 2px solid var(--gold-soft); animation: bracket-pop 0.4s ease-out; }
+@keyframes bracket-pop { 0% { transform: scale(0.85) rotate(-3deg); } 70% { transform: scale(1.05) rotate(1deg); } 100% { transform: none; } }
+@media (max-width: 380px) { .bracket-blurb { font-size: 0.75rem; } }
+
 /* "In a nutshell" (Santa's file) */
 .nutshell {
   position: relative; margin-top: 0.75rem; padding: 1rem 1.1rem; border-radius: 16px;
@@ -559,6 +596,11 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .tot-answer.picked { background: var(--berry); border-color: var(--berry); color: var(--on-berry); font-weight: 800; }
 .tot-answer-or { font-family: var(--hand); font-weight: 700; color: var(--muted); }
 .tot-answer-note { font-size: 0.8rem; font-weight: 800; color: var(--pine); margin-top: -0.15rem; }
+.squishy-fav { display: flex; align-items: center; gap: 0.85rem; margin-top: 0.7rem; padding: 0.6rem 0.8rem; border-radius: 14px; background: var(--field); border: 1.5px solid var(--gold-soft); }
+.squishy-fav img { flex: none; width: 4.5rem; height: 4.5rem; border-radius: 12px; background: var(--card); }
+.squishy-fav-label { display: block; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.squishy-fav-name { display: block; font-family: var(--display); font-size: 1.15rem; color: var(--berry); line-height: 1.2; }
+.squishy-fav-blurb { display: block; font-size: 0.85rem; color: var(--muted); }
 
 /* Gift ideas (from the gift engine) */
 .idea-group { margin: 1rem 0 0.5rem; font-family: var(--display); font-size: 1.05rem; }
