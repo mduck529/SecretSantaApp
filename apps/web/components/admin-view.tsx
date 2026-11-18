@@ -38,8 +38,8 @@ export interface AdminMember {
   user_id: string | null;
   questionnaire_complete: boolean;
   match_email_status: string | null;
+  /** Read on the server (see loadProgress), not by the organizer's own login. */
   questionnaire_updated_at: string | null;
-  match_email_sent_at: string | null;
   last_reminded_at: string | null;
 }
 
@@ -174,21 +174,9 @@ export function AdminView({ groupId, group, members, phones, rules, activity }: 
                       {m.email}
                       {phones[m.id] ? ` · ${phones[m.id]}` : ""}
                     </div>
-                    {status === "sent" ? (
+                    {m.last_reminded_at ? (
                       <div className="muted small">
-                        {m.match_email_sent_at ? (
-                          <>
-                            Match email <LocalTime iso={m.match_email_sent_at} />
-                          </>
-                        ) : (
-                          "No match email yet"
-                        )}
-                        {m.last_reminded_at ? (
-                          <>
-                            {" "}
-                            · reminded <LocalTime iso={m.last_reminded_at} />
-                          </>
-                        ) : null}
+                        Reminded <LocalTime iso={m.last_reminded_at} />
                       </div>
                     ) : null}
                   </div>

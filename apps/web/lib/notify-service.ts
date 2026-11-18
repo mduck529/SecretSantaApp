@@ -30,6 +30,27 @@ async function loadRecipients(db: Db, groupId: string): Promise<Recipient[]> {
   return data as Recipient[];
 }
 
+/**
+ * Per-person questionnaire progress and last reminder time, for the organizer page.
+ *
+ * `questionnaire_updated_at` and `last_reminded_at` are not granted to the organizer's own login
+ * (migration 20261116000000, security review M-2), so the page reads them here, after the same
+ * admin check every organizer action uses. Neither says anything about matches.
+ * Never add `match_email_sent_at` or `match_email_retry` to this list: they show whose match changed.
+ */
+export async function loadProgress(
+  groupId: string,
+  actorUserId: string,
+): Promise<Record<string, { questionnaire_updated_at: string | null; last_reminded_at: string | null }>> {
+  const db = createAdminClient();
+  await assertAdmin(db, groupId, actorUserId);
+  const { data, error } = await db.from("memberships").select("id, questionnaire_updated_at, last_reminded_at").eq("group_id", groupId);
+  if (error) throw error;
+  return Object.fromEntries(
+    data.map((m) => [m.id as string, { questionnaire_updated_at: m.questionnaire_updated_at as string | null, last_reminded_at: m.last_reminded_at as string | null }]),
+  );
+}
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** Sends one reminder per person and records who actually got one. Returns who succeeded. */

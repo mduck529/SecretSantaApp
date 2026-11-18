@@ -30,6 +30,8 @@ import {
   type RecipientInfo,
 } from "@/lib/audience";
 import { describeAudit } from "@/lib/audit-labels";
+import { ADMIN_MEMBER_COLUMNS } from "@/lib/admin-columns";
+import { readFileSync } from "node:fs";
 
 describe("normalizePhone", () => {
   it.each([
@@ -393,4 +395,22 @@ describe("checkReveal", () => {
   });
   it("refuses a second reveal", () => expect(checkReveal({ ...sent, revealed_at: "2026-12-25T10:00:00Z" }, "2026-12-26").ok).toBe(false));
   it("reads today as a calendar date", () => expect(todayInEastern(new Date("2026-12-25T03:00:00Z"))).toBe("2026-12-24"));
+});
+
+describe("organizer page column access (security review M-2)", () => {
+  // The organizer's own login can read only the memberships columns granted in this migration.
+  const migration = readFileSync(new URL("../../../supabase/migrations/20261116000000_memberships_column_grants.sql", import.meta.url), "utf8");
+  const granted = /grant select \(([^)]*)\)\s+on public\.memberships to authenticated/.exec(migration)![1]!
+    .split(",")
+    .map((c) => c.trim());
+
+  it("only asks for columns the database allows, or the page renders empty", () => {
+    for (const column of ADMIN_MEMBER_COLUMNS.split(",").map((c) => c.trim())) {
+      expect(granted, `${column} is not granted to the organizer's login`).toContain(column);
+    }
+  });
+
+  it("never reads the columns that reveal whose match changed", () => {
+    expect(ADMIN_MEMBER_COLUMNS).not.toMatch(/match_email_sent_at|match_email_retry/);
+  });
 });

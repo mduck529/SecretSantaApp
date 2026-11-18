@@ -2,6 +2,8 @@ import { AdminView, type AdminMember } from "@/components/admin-view";
 import { requireAdmin } from "@/lib/auth";
 import { formatExchangeDate, groupBudget } from "@/lib/group-service";
 import { describeAudit } from "@/lib/audit-labels";
+import { loadProgress } from "@/lib/notify-service";
+import { ADMIN_MEMBER_COLUMNS } from "@/lib/admin-columns";
 
 export const metadata = { title: "Organizer · Secret Santa" };
 
@@ -14,7 +16,7 @@ export const maxDuration = 60;
  */
 export default async function AdminPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: groupId } = await params;
-  const { supabase } = await requireAdmin(groupId);
+  const { supabase, user } = await requireAdmin(groupId);
 
   const [{ data: group }, { data: members }, { data: contacts }, { data: rules }, { data: log }] = await Promise.all([
     supabase
@@ -24,9 +26,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
       .single(),
     supabase
       .from("memberships")
-      .select(
-        "id, display_name, email, role, user_id, questionnaire_complete, questionnaire_updated_at, match_email_status, match_email_sent_at, last_reminded_at",
-      )
+      .select(ADMIN_MEMBER_COLUMNS)
       .eq("group_id", groupId)
       .order("created_at"),
     supabase.from("member_contacts").select("membership_id, phone"),
@@ -40,6 +40,7 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
       .limit(15),
   ]);
   if (!group || !members) return null;
+  const progress = await loadProgress(groupId, user.id);
 
   const actorName = new Map(members.filter((m) => m.user_id).map((m) => [m.user_id as string, m.display_name as string]));
   const activity = (log ?? []).map((a) => ({
@@ -63,7 +64,11 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
         sent_at: group.sent_at,
         revealed_at: group.revealed_at,
       }}
-      members={members as AdminMember[]}
+      members={(members as unknown as Omit<AdminMember, "questionnaire_updated_at" | "last_reminded_at">[]).map((m) => ({
+        ...m,
+        questionnaire_updated_at: progress[m.id]?.questionnaire_updated_at ?? null,
+        last_reminded_at: progress[m.id]?.last_reminded_at ?? null,
+      }))}
       phones={Object.fromEntries((contacts ?? []).map((c) => [c.membership_id as string, c.phone as string]))}
       rules={(rules ?? []) as AdminViewRule[]}
       activity={activity}

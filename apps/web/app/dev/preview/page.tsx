@@ -107,7 +107,6 @@ const MEMBERS: AdminMember[] = [
   // Sam started but hasn't finished; Leo has nothing saved.
   questionnaire_updated_at: done || i === 6 ? "2026-11-15T18:30:00Z" : null,
   match_email_status: i === 4 ? "failed" : "sent",
-  match_email_sent_at: i === 4 ? null : "2026-11-13T14:00:00Z",
   last_reminded_at: i === 2 ? "2026-11-17T16:00:00Z" : null,
 }));
 
