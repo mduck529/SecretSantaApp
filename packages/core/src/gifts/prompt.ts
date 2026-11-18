@@ -12,7 +12,7 @@ import { DIY_IDEA_COUNT, RETAIL_IDEA_COUNT } from "./schema.js";
  * Bump when the prompt or schema changes in a way that should refresh stored ideas.
  * Stored in `gift_suggestions.prompt_version`.
  */
-export const GIFT_PROMPT_VERSION = "gift-ideas-v3";
+export const GIFT_PROMPT_VERSION = "gift-ideas-v4";
 
 /** Runtime model (docs/PLAN.md: Sonnet 5.5 runs gift recommendations). */
 export const GIFT_MODEL = "claude-sonnet-5-5";
@@ -42,7 +42,6 @@ What makes a good set:
 - Respect hints like "no clutter", "consumables only" or "I have everything": favor consumables, experiences (if allowed), and nicer versions of things they use every day.
 - A favorite squishy style (squishy_favorite) is a strong gift hint: suggest a squishy of that style when it fits the budget. Ignore it if they answered "Not into squishies".
 - Suggest alcohol only if they name a drink they enjoy. Never suggest diet, weight-loss, or self-improvement gifts unless they asked for them.
-- Wish list links cannot be opened. You may use the words in a link to understand their taste, but suggest your own ideas within the budget.
 - DIY ideas must be doable by an ordinary adult in a home kitchen or at a table, with no special tools. Materials are things a craft, hardware, or grocery store sells. Be honest about difficulty and time, and explain how to make it in one or two plain sentences.
 - If the questionnaire is empty or has only sizes, suggest well-liked, low-risk gifts (good treats, cozy things, a nicer version of something everyday), use based_on "general", and say in the reason that it is a safe pick until they fill in their profile.
 
@@ -54,7 +53,7 @@ function escapeForTag(text: string): string {
 }
 
 /** Questions that say something about taste (as opposed to sizes, allergies, or "please no"). */
-export const TASTE_KEYS = ["hobbies", "loves", "this_year", "want_to_try", "fandoms", "dream_gift", "wishlist", "anything_else"] as const;
+export const TASTE_KEYS = ["hobbies", "loves", "this_year", "want_to_try", "fandoms"] as const;
 
 /** Enough this-or-that picks to say something about their taste; counts as one taste answer. */
 const PICKS_FOR_TASTE = 3;
@@ -80,7 +79,7 @@ export interface GiftPromptInput {
   budget: Budget;
 }
 
-/** "Please no" and allergies go first so the model reads them before the wish list. */
+/** "Please no" and allergies go first so the model reads them before everything else. */
 const ORDER = ["please_no", "allergies", ...ALL_QUESTIONS.map((q) => q.key).filter((k) => k !== "please_no" && k !== "allergies")];
 
 /** The user message for one giftee. Pair with `GIFT_SYSTEM_PROMPT` and `GIFT_IDEAS_JSON_SCHEMA`. */

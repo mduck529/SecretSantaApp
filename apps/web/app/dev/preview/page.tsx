@@ -46,8 +46,6 @@ const SUE: Answers = {
   shoe_size: "US women's 7.5",
   please_no: "Candles (I have 40), mugs, anything with glitter",
   allergies: "Tree nuts",
-  dream_gift: "A little cottage with a greenhouse",
-  wishlist: "https://www.amazon.com/hz/wishlist/ls/EXAMPLE123\nhttps://www.etsy.com/listing/1234/handmade-pottery-tools",
 };
 
 const IDEAS: GiftIdeas = {

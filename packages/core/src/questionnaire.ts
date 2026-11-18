@@ -5,7 +5,7 @@
  *
  * Some keys are relied on elsewhere, so keep them when rewording:
  * `hobbies`, `loves`, `please_no` (required), `please_no` + `allergies` (gift engine "avoid"
- * rules), `keep_or_do` (experience gifts), `wishlist` (links), sizes (`*_size`).
+ * rules), `keep_or_do` (experience gifts), sizes (`*_size`).
  */
 export interface ThisOrThatOption {
   label: string;
@@ -72,27 +72,12 @@ function pair(key: string, a: [string, string], b: [string, string]): Question {
 
 export const QUESTIONNAIRE: readonly Section[] = [
   {
-    title: "Get to know you",
-    intro: "Help your Secret Santa get to know you a little better.",
+    title: "Sizes",
     questions: [
-      { key: "hobbies", kind: "long_text", label: "What do you love doing with a free afternoon?", required: true, maxLength: 1000 },
-      {
-        key: "this_year",
-        kind: "long_text",
-        label: "What's been new or exciting in your life this year?",
-        hint: "A new job, a trip, a hobby, a move, a grandkid…",
-        maxLength: 1000,
-      },
-      { key: "want_to_try", kind: "long_text", label: "Something you've always wanted to try or learn", maxLength: 1000 },
-      { key: "fandoms", kind: "long_text", label: "Shows, books, podcasts, teams or music you're into right now", maxLength: 1000 },
-      {
-        key: "loves",
-        kind: "long_text",
-        label: "A few little things that always make you happy",
-        hint: "A smell, a snack, a place, a brand, a color…",
-        required: true,
-        maxLength: 1000,
-      },
+      { key: "shirt_size", kind: "choice", label: "Shirt / top size", options: SHIRT_SIZES },
+      { key: "pants_size", kind: "text", label: "Pants size", hint: "e.g. 32x30 or 8", maxLength: 50 },
+      { key: "shoe_size", kind: "text", label: "Shoe size", hint: "e.g. US men's 10", maxLength: 50 },
+      { key: "other_sizes", kind: "text", label: "Other sizes (hat, gloves, ring…)", maxLength: 200 },
     ],
   },
   {
@@ -122,12 +107,27 @@ export const QUESTIONNAIRE: readonly Section[] = [
     ],
   },
   {
-    title: "Sizes",
+    title: "Get to know you",
+    intro: "Help your Secret Santa get to know you a little better.",
     questions: [
-      { key: "shirt_size", kind: "choice", label: "Shirt / top size", options: SHIRT_SIZES },
-      { key: "pants_size", kind: "text", label: "Pants size", hint: "e.g. 32x30 or 8", maxLength: 50 },
-      { key: "shoe_size", kind: "text", label: "Shoe size", hint: "e.g. US men's 10", maxLength: 50 },
-      { key: "other_sizes", kind: "text", label: "Other sizes (hat, gloves, ring…)", maxLength: 200 },
+      { key: "hobbies", kind: "long_text", label: "What do you love doing with a free afternoon?", required: true, maxLength: 1000 },
+      {
+        key: "this_year",
+        kind: "long_text",
+        label: "What's been new or exciting in your life this year?",
+        hint: "A new job, a trip, a hobby, a move, a grandkid…",
+        maxLength: 1000,
+      },
+      { key: "want_to_try", kind: "long_text", label: "Something you've always wanted to try or learn", maxLength: 1000 },
+      { key: "fandoms", kind: "long_text", label: "Shows, books, podcasts, teams or music you're into right now", maxLength: 1000 },
+      {
+        key: "loves",
+        kind: "long_text",
+        label: "A few little things that always make you happy",
+        hint: "A smell, a snack, a place, a brand, a color…",
+        required: true,
+        maxLength: 1000,
+      },
     ],
   },
   {
@@ -135,9 +135,6 @@ export const QUESTIONNAIRE: readonly Section[] = [
     questions: [
       { key: "please_no", kind: "long_text", label: "Please no…", hint: "Things you don't want or already have plenty of", required: true, maxLength: 1000 },
       { key: "allergies", kind: "text", label: "Allergies or sensitivities", hint: "Food, fragrance, materials…", maxLength: 300 },
-      { key: "dream_gift", kind: "long_text", label: "If money were no object, what would you ask Santa for?", hint: "Just for fun", maxLength: 500 },
-      { key: "wishlist", kind: "long_text", label: "Wish list links", hint: "One link per line", maxLength: 3000 },
-      { key: "anything_else", kind: "long_text", label: "Anything else your Secret Santa should know?", maxLength: 1000 },
     ],
   },
 ];
@@ -175,12 +172,6 @@ export function isComplete(answers: Answers): boolean {
   return ALL_QUESTIONS.every((q) => !q.required || Boolean(answers[q.key]));
 }
 
-/** Pulls http(s) links out of the wish list answer. */
-export function wishlistLinks(answers: Answers): string[] {
-  return (answers.wishlist ?? "")
-    .split(/\s+/)
-    .filter((s) => /^https?:\/\/[^\s<>"]+$/i.test(s));
-}
 
 /** Every answer a this-or-that question accepts. */
 export function thisOrThatValues(q: Extract<Question, { kind: "this_or_that" }>): string[] {

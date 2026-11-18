@@ -169,7 +169,7 @@ describe("validateGiftIdeas", () => {
 
   it("requires based_on to point at a question they answered", () => {
     const ideas = goodIdeas();
-    ideas.retail[0]!.based_on = "wishlist"; // angler left the wish list blank
+    ideas.retail[0]!.based_on = "real_fake_tree"; // angler skipped this pair
     ideas.retail[1]!.based_on = "made_up";
     ideas.retail[2]!.based_on = "general";
     expect(check(ideas).problems.map((p) => [p.code, p.at])).toEqual([

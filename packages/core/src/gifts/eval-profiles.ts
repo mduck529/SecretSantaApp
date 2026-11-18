@@ -42,7 +42,7 @@ export const GIFT_EVAL_PROFILES: readonly GiftEvalProfile[] = [
       pants_size: "36x32",
       shoe_size: "US men's 11",
       allergies: "None",
-      anything_else: "I'm on the water most Saturdays from April to October.",
+      this_year: "Cut back to four days a week, so I'm on the water most Saturdays from April to October.",
     },
     mustAvoid: ["mug", "fish pun"],
     expect: "Specific fly fishing or tying gear, coffee or grilling upgrades; ideas spread across interests; nothing mug-shaped.",
@@ -228,15 +228,19 @@ export const GIFT_EVAL_PROFILES: readonly GiftEvalProfile[] = [
     expect: 'Safe general gifts; any clothing uses the given sizes; based_on "general" or a size key.',
   },
   {
-    id: "wishlist-only",
-    tests: "Only wish list links, one far over budget.",
-    budget: usd(60, 80),
+    id: "this-or-that-only",
+    tests: "Only this-or-that picks and a favorite squishy, nothing written.",
+    budget: usd(20, 30),
     answers: {
-      wishlist:
-        "https://www.amazon.com/dp/B000000000/enameled-cast-iron-dutch-oven-7qt\nhttps://www.etsy.com/listing/123/handmade-ceramic-planter",
+      coffee_tea: "Tea",
+      sweet_salty: "Sweet",
+      night_in_out: "Cozy night in",
+      books_movies: "Movies",
+      comfy_dressed: "Comfy",
+      squishy_favorite: "Crunchy",
     },
     mustAvoid: [],
-    expect: "Ideas in the spirit of the list (cookware, ceramics, plants) inside $60-80; no links; not the $400 Dutch oven.",
+    expect: "Cozy movie-night and sweet treat ideas, plus a crunchy squishy, inside $20-30; nutshell drawn from the picks."
   },
   {
     id: "cats-not-cat-themed",
@@ -286,7 +290,7 @@ export const GIFT_EVAL_PROFILES: readonly GiftEvalProfile[] = [
       hobbies: "Dinosaurs, building things, drawing",
       loves: "T. rex, the color orange",
       please_no: "Anything with tiny pieces — little brother is 2",
-      anything_else: "I'm 8.",
+      this_year: "I turned 8 and I can read chapter books now!",
     },
     mustAvoid: ["lego", "bead", "marble", "tiny piece"],
     expect: "Age-appropriate dinosaur books, large building sets or art supplies without small parts.",
