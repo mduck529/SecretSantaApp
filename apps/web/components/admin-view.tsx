@@ -507,12 +507,13 @@ export function AdminView({ groupId, group, members, phones, rules, activity }: 
             Message
             <textarea name="message" rows={4} required maxLength={2000} />
           </label>
+          {/* Keep these names distinct from the Send step's "Send to everyone" button (e2e clicks it by name). */}
           <div className="row actions">
             <SubmitButton name="intent" value="test" skipConfirm pendingText="Sending…">
               Send me a test copy
             </SubmitButton>
             <SubmitButton className="primary" name="intent" value="send" pendingText="Sending…">
-              Send to everyone
+              Send announcement
             </SubmitButton>
           </div>
         </ActionForm>
