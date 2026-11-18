@@ -17,6 +17,8 @@ const angler = GIFT_EVAL_PROFILES.find((p) => p.id === "full-angler")!;
 /** A hand-written answer that follows every rule for the "full-angler" profile. */
 function goodIdeas(): GiftIdeas {
   return {
+    nutshell:
+      "A salty-snack, black-coffee kind of outdoors person who's happiest on the water. They'd love to try saltwater fly fishing someday.",
     retail: [
       {
         title: "Fly-tying kit with vise and starter materials",
@@ -49,8 +51,8 @@ function goodIdeas(): GiftIdeas {
     diy: [
       {
         title: "Homemade beef jerky in three flavors",
-        reason: "Beef jerky is their go-to snack.",
-        based_on: "treats",
+        reason: "They're a salty-snack person who loves the outdoors.",
+        based_on: "sweet_salty",
         estimated_cost_usd: 35,
         materials: ["2 lb beef round", "soy sauce", "black pepper", "zip bags"],
         how_to: "Marinate thin strips overnight, then dry them in a low oven for four hours.",
@@ -59,8 +61,8 @@ function goodIdeas(): GiftIdeas {
       },
       {
         title: "Hand-painted fly box in forest green",
-        reason: "Forest green is their favorite color.",
-        based_on: "favorite_colors",
+        reason: "Green is one of the things they love.",
+        based_on: "loves",
         estimated_cost_usd: 25,
         materials: ["plain wooden box", "foam insert", "green acrylic paint", "clear sealer"],
         how_to: "Paint the box, seal it, and glue foam inside to hold flies.",
@@ -95,6 +97,7 @@ describe("gift ideas schema", () => {
     };
     walk(GIFT_IDEAS_JSON_SCHEMA);
     expect(objects.length).toBe(3);
+    expect(GIFT_IDEAS_JSON_SCHEMA.required).toContain("nutshell");
     for (const o of objects as Record<string, unknown>[]) {
       expect(o.additionalProperties).toBe(false);
       expect([...(o.required as string[])].sort()).toEqual(Object.keys(o.properties as object).sort());
@@ -151,7 +154,7 @@ describe("validateGiftIdeas", () => {
     expect(check(ideas).problems).toEqual([]);
   });
 
-  it("refuses experience gifts for someone who would rather have a thing", () => {
+  it("refuses experience gifts for someone who picked something to keep", () => {
     const profile = GIFT_EVAL_PROFILES.find((p) => p.id === "rather-a-thing")!;
     const ideas = goodIdeas();
     ideas.retail.forEach((r) => {
@@ -187,6 +190,27 @@ describe("validateGiftIdeas", () => {
       ["text", "retail[2]"],
       ["duplicate", "diy[1]"],
     ]);
+  });
+
+  it("requires a short nutshell without links", () => {
+    const missing = goodIdeas();
+    delete missing.nutshell;
+    expect(check(missing).problems.map((p) => [p.code, p.at])).toEqual([["text", "nutshell"]]);
+    const linked = goodIdeas();
+    linked.nutshell = "Loves fishing. See www.example.com";
+    expect(check(linked).problems.map((p) => [p.code, p.at])).toEqual([["text", "nutshell"]]);
+    const long = goodIdeas();
+    long.nutshell = "x".repeat(501);
+    expect(check(long).problems.map((p) => [p.code, p.at])).toEqual([["text", "nutshell"]]);
+  });
+
+  it("keepCleanIdeas drops a bad nutshell but keeps the ideas", () => {
+    const ideas = goodIdeas();
+    ideas.nutshell = "See https://example.com";
+    const kept = keepCleanIdeas(check(ideas))!;
+    expect(kept.nutshell).toBeUndefined();
+    expect(kept.retail).toHaveLength(3);
+    expect(keepCleanIdeas(check(goodIdeas()))!.nutshell).toBe(goodIdeas().nutshell);
   });
 
   it("keepCleanIdeas drops only the ideas with problems", () => {
@@ -308,7 +332,7 @@ describe("eval set", () => {
     const coverage = new Set(GIFT_EVAL_PROFILES.map((p) => profileCoverage(p.answers)));
     expect(coverage).toEqual(new Set(["empty", "thin", "partial", "full"]));
     expect(GIFT_EVAL_PROFILES.some((p) => p.answers.allergies && p.answers.allergies !== "None")).toBe(true);
-    expect(GIFT_EVAL_PROFILES.some((p) => p.answers.experiences === "I'd rather have a thing")).toBe(true);
+    expect(GIFT_EVAL_PROFILES.some((p) => p.answers.keep_or_do === "Something to keep")).toBe(true);
     expect(GIFT_EVAL_PROFILES.some((p) => p.budget.minCents === p.budget.maxCents)).toBe(true);
   });
 });

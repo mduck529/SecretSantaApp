@@ -23,21 +23,36 @@ const GROUP = "00000000-0000-4000-8000-000000000001";
 
 const SUE: Answers = {
   hobbies: "Gardening, mystery novels, and long walks with the dog. Just started pottery!",
-  loves: "Lavender, anything blue, good olive oil, cozy socks, Ina Garten",
-  please_no: "Candles (I have 40), mugs, anything with glitter",
+  this_year: "Retired in June and finally have time for the garden. Also became a grandma!",
+  want_to_try: "A real pottery wheel class, and seeing the tulip fields in Holland",
   fandoms: "Agatha Christie, the Great British Baking Show, the Packers",
-  favorite_colors: "Navy, sage green",
-  treats: "Earl Grey, dark chocolate with sea salt, a nice Pinot Noir",
-  stores: "Anthropologie, Williams Sonoma, the local nursery",
-  experiences: "Love them",
+  loves: "Lavender, anything blue, good olive oil, cozy socks, Ina Garten",
+  coffee_tea: "Tea",
+  sweet_salty: "Sweet",
+  night_in_out: "Cozy night in",
+  beach_mountains: "Both!",
+  books_movies: "Books",
+  cook_order: "Cook it",
+  useful_fancy: "Useful",
+  classic_trendy: "Classic",
+  comfy_dressed: "Comfy",
+  outdoors_indoors: "Outdoors",
+  gadgets_handmade: "Handmade",
+  keep_or_do: "Something to do",
+  real_fake_tree: "Real tree",
+  squishy_favorite: "Vaseline-filled",
   shirt_size: "M",
   pants_size: "8",
   shoe_size: "US women's 7.5",
+  please_no: "Candles (I have 40), mugs, anything with glitter",
   allergies: "Tree nuts",
+  dream_gift: "A little cottage with a greenhouse",
   wishlist: "https://www.amazon.com/hz/wishlist/ls/EXAMPLE123\nhttps://www.etsy.com/listing/1234/handmade-pottery-tools",
 };
 
 const IDEAS: GiftIdeas = {
+  nutshell:
+    "A tea-loving homebody who'd pick a cozy night in with a good mystery over a night out. Newly retired and newly a grandma, they're throwing themselves into the garden and pottery, and they love classic, handmade things they'll actually use.",
   retail: [
     {
       title: "Beginner pottery tool set",
@@ -62,7 +77,7 @@ const IDEAS: GiftIdeas = {
     {
       title: "Hand-blended Earl Grey tea tin",
       reason: "Earl Grey is her favorite; add dried lavender for a personal twist.",
-      based_on: "treats",
+      based_on: "loves",
       estimated_cost_usd: 25,
       materials: ["Loose Earl Grey", "Dried culinary lavender", "Tea tin", "Label"],
       how_to: "Mix 4 parts tea to 1 part lavender, fill the tin and hand-letter a label.",
@@ -72,7 +87,7 @@ const IDEAS: GiftIdeas = {
   ],
 };
 
-const MINE: Answers = { hobbies: "Woodworking and pickleball", loves: "Coffee, flannel, anything smoked", shirt_size: "L" };
+const MINE: Answers = { hobbies: "Woodworking and pickleball", loves: "Coffee, flannel, anything smoked", coffee_tea: "Coffee", shirt_size: "L" };
 
 const MEMBERS: AdminMember[] = [
   ["Jamie Rivera", "jamie@example.com", "organizer", true, true],
