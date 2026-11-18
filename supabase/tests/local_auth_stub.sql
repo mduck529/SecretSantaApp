@@ -18,3 +18,9 @@ $$;
 create function auth.email() returns text language sql stable as $$
   select current_setting('request.jwt.claims', true)::jsonb ->> 'email'
 $$;
+
+-- Like Supabase: objects created later in `public` are granted to the API roles by default,
+-- so migrations must revoke what they do not want exposed.
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;

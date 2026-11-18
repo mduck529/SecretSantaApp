@@ -60,7 +60,7 @@ phone (optional)     each person row        everyone; you         who they buy f
 | Milestone | Target date | What happens |
 |---|---|---|
 | Foundation + draw logic | Sat–Sun Nov 7–8 | Project setup, database, tested draw algorithm (done) |
-| Domain + accounts | This weekend | Buy domain; create Supabase, Vercel, Resend accounts; verify domain for email |
+| Domain + accounts | This weekend | Create Supabase and Vercel accounts; Gmail app password for email (no domain needed) |
 | Build | Mon–Wed Nov 9–11 | Sign-in, group, exclusions, draw, match page, questionnaire, emails |
 | Dry run + security review | Thu Nov 12 | 2–3 family members test it; fix issues |
 | **Family launch + draw** | **Fri Nov 13** | Draw runs; everyone gets their match by email |
@@ -118,36 +118,43 @@ Chosen so the web app and the future mobile apps share as much code as possible.
 ```
 secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 ├─ apps/
-│  ├─ web/        Next.js (App Router) — Phase 1
-│  └─ mobile/     Expo (React Native) — Phase 4
+│  ├─ web/        Next.js (App Router) — Phase 1, built
+│  └─ mobile/     Expo (React Native) — Phase 4, not started
 ├─ packages/
-│  ├─ core/       Draw algorithm, validation, domain types (pure TS, fully tested)
-│  ├─ db/         Schema, migrations, generated types
-│  ├─ api-client/ Typed client used by web and mobile
-│  └─ ui/         Shared design tokens (later: shared components)
-└─ supabase/      Migrations, row-level-security policies, edge functions
+│  └─ core/       Draw algorithm, questionnaire, validation, domain types (pure TS, tested)
+├─ scripts/
+│  └─ test-db.sh  Applies migrations to a throwaway Postgres and runs the privacy tests
+├─ docs/          PLAN, TASKS, SETUP, DRY-RUN, and later SECURITY-REVIEW
+└─ supabase/      Migrations, row-level-security tests, seed.sql (dry run only)
+
+(`packages/db`, `api-client` and `ui` were planned but never created. Database types come
+from the SQL in `supabase/migrations`; shared components wait for the mobile app.)
 ```
 
 | Concern | Choice | Reason |
 |---|---|---|
 | Backend / DB / Auth | **Supabase** (Postgres + Auth + Row Level Security) | Magic-link login fits families; RLS keeps draw results private at the database level; works with web and Expo |
 | Web hosting | Vercel | Zero-config Next.js |
-| Email | Resend (+ React Email templates) | Simple API, good deliverability |
+| Email | Gmail SMTP via Nodemailer (`secretsanta8@gmail.com`) | Free, no domain needed, lands in inboxes; ~500/day is plenty |
 | Gift ideas | Claude API (Sonnet 5.5) | Turns questionnaire answers into structured retail + DIY suggestions |
 | Mobile | Expo + EAS Build | One codebase for iOS and Android, reuses `packages/core` |
 
 ### Core data model
 
 - `users` — id, name, email, phone, notification preferences
-- `groups` — id, name, budget, exchange_date, status (`draft` → `open` → `drawn` → `complete`)
-- `memberships` — group_id, name, email, user_id (nullable until they sign in), role (`organizer` / `co_organizer` / `member`), email_status, questionnaire_complete. The organizer enters the roster directly, so the draw can run before anyone has an account; the match email's link signs them in.
-- `exclusions` — group_id, giver_id, receiver_id (e.g. spouses, last year's match); can be one-way or both ways
-- `assignments` — group_id, giver_id, receiver_id. **RLS: a user can only read the row where they are the giver.** The organizer is a participant and cannot see other matches either; everyone sees all matches only if the organizer turns on "reveal" after the exchange date.
-- `audit_log` — group_id, actor_id, action, created_at (admin actions; never stores pairings)
-- `questionnaire_templates` / `questions` — customizable per group
-- `answers` — membership_id, question_id, value, updated_at
-- `profile_updates` — membership_id, changed_at, notified_at. Drives the "your giftee updated their profile" email to their Santa (batched so several quick edits send one email, not ten)
-- `gift_suggestions` — receiver_id, type (`retail` / `diy`), title, reason, link, price band, generated_from_answers_at (so ideas regenerate when answers change)
+The schema is in `supabase/migrations/` (8 tables; the authoritative version is the SQL, not this list).
+
+- `groups` — id, name, budget_min_cents / budget_max_cents, exchange_date, status (`draft` → `matched` → `sent`), draw_round, drawn_at, sent_at, revealed_at (set by the reveal button, not yet built)
+- `memberships` — group_id, display_name, email (lowercase, unique per group), user_id (nullable until first sign-in), role (`organizer` / `co_organizer` / `member`), match_email_status, questionnaire_complete. The organizer enters the roster directly, so the draw can run before anyone has an account; the match email's link signs them in.
+- `member_contacts` — membership_id, phone (E.164, optional; organizer-only)
+- `exclusion_rules` — group_id, a_id, b_id, two_way. "a can't draw b", and b can't draw a when two_way
+- `assignments` — group_id, giver_id, receiver_id, round. **RLS: a user can only read the row where they are the giver** (`assignments_own`). Written only by the server. The organizer cannot see pairings either; everyone sees all matches only after reveal.
+- `questionnaire_answers` — membership_id, answers (jsonb keyed by the question keys in `packages/core/src/questionnaire.ts`), is_complete, updated_at. Visible only to the person and their Santa
+- `profile_notifications` — membership_id, last_edit_at, notified_at. Drives the "your giftee updated their profile" email to their Santa, throttled to one per 30 minutes
+- `audit_log` — group_id, actor_user_id, action, details, created_at (admin actions; never stores pairings)
+
+Not built yet: `gift_suggestions` (task G2) and the per-group custom questionnaire (Phase 3).
+The questionnaire is a fixed 15-question v1 for now (`packages/core/src/questionnaire.ts`).
 
 ### Draw algorithm (the most important piece of logic)
 
@@ -163,12 +170,14 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 
 ### Progress
 
+> **Current status, review findings and the task queue live in [`TASKS.md`](TASKS.md)** (reviewed 2026-11-11). The table below is the Nov 7 snapshot.
+
 | Step | Status |
 |---|---|
 | 0.2 Data model + privacy rules | Done: `supabase/migrations/`, 34 privacy tests in `supabase/tests/rls_test.sql` |
 | 0.3 Monorepo, Next.js app, CI | Done (deploy waits on Supabase/Vercel accounts) |
 | 0.4 Draw algorithm | Done: `packages/core`, 13 tests incl. randomized and exhaustive checks; dropout/late-add repair included |
-| 0.5 Seed data | Not started |
+| 0.5 Seed data | Done: `supabase/seed.sql` (dry run only, `@example.com` addresses) and `docs/DRY-RUN.md` checklist (task L8) |
 | 1.1 Sign-in by emailed link (with "Continue" step so email scanners can't use up links) | Built; needs real Supabase to test end to end |
 | 1.2–1.3 Group, people (name/email/phone), rules on each row | Built |
 | 1.4 Match → Send, person page (my match + my questionnaire) | Built |
@@ -177,7 +186,7 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 | 1.6 "Your giftee updated their profile" emails (sent on save, 30-min throttle, daily sweep) | Built |
 | 1.7 Email templates (match, changed match, update, reminder) | Built; unit-tested incl. HTML escaping |
 | 1.4c Notification tools: targeted reminders (not started / unfinished, optional note, 24h cooldown), bulk resend of match emails (everyone / not opened / failed), announcement to everyone (with a test copy to yourself first), status summary, activity log, times shown in your own timezone | Built; unit-tested. Reminders stay manual by design |
-| 1.9 End-to-end test | Waiting on Supabase project (local Supabase images are blocked in this build environment) |
+| 1.9 End-to-end test | Not built (task L5). A manual dry run with the checklist in `docs/DRY-RUN.md` replaces it for the family launch |
 
 ### Phase 0 — Foundation (Sat–Sun Nov 7–8)
 
@@ -200,7 +209,7 @@ secretsantaapp/                 (Turborepo monorepo, TypeScript everywhere)
 | 1.4b | **Organizer admin panel:** status dashboard, resend match email, fix email, **reminder button** (one person or everyone not done), re-draw, remove a dropout with loop repair, settings (see "Organizer admin controls" above) | **Opus 5.5** designs the match-blind server functions and loop repair → **Sonnet 5.5** builds the screens | Admin panel | Tue–Wed |
 | 1.5 | Default questionnaire: likes, dislikes, hobbies, sizes (shirt/pants/shoe), favorite colors, allergies, "please no…", wish-list links. Can be saved partially and edited anytime | **Haiku 5.5** drafts questions → **Sonnet 5.5** builds the form | Questionnaire page | Wed |
 | 1.6 | **Profile-update notifications:** when someone saves answers, their Santa gets "Your giftee updated their profile" with a link. Batched (e.g. sent 30 min after the last edit) so a burst of edits sends one email | **Opus 5.5** designs the trigger/batching → **Sonnet 5.5** builds it | Live-updating match | Wed |
-| 1.7 | Email templates: "You've been matched — and please fill out your own questionnaire", "Your giftee updated their profile", gentle reminder for anyone who hasn't filled theirs out | **Haiku 5.5** writes copy → **Sonnet 5.5** wires up Resend | Email flow | Wed |
+| 1.7 | Email templates: "You've been matched — and please fill out your own questionnaire", "Your giftee updated their profile", gentle reminder for anyone who hasn't filled theirs out | **Haiku 5.5** writes copy → **Sonnet 5.5** wires up email sending | Email flow | Wed |
 | 1.8 | Security and privacy review: RLS, nobody (organizer included) can read others' matches, no admin endpoint or screen leaks pairings, links can't be guessed, update emails never reveal who the Santa is | **Opus 5.5** | Review notes + fixes | Thu |
 | 1.9 | End-to-end test of the whole flow (Playwright): roster → draw → match email → questionnaire edit → Santa notified, plus admin actions (resend, dropout repair) while confirming the organizer never receives pairing data | **Sonnet 5.5** | Green CI | Thu |
 | 1.10 | Dry run with 2–3 family members on their phones, fix friction | **Sonnet 5.5** for fixes | Go/no-go | Thu |
