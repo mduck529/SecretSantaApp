@@ -3,13 +3,29 @@ import { ActionForm, SubmitButton } from "@/components/action-form";
 import { requireAdmin } from "@/lib/auth";
 import { formatExchangeDate, groupBudget } from "@/lib/group-service";
 import {
+  AUTO_REMIND,
+  REMINDER_AUDIENCES,
+  REMINDER_COOLDOWN_MS,
+  RESEND_AUDIENCES,
+  pickReminderTargets,
+  pickResendTargets,
+  questionnaireState,
+  summarize,
+  type RecipientInfo,
+} from "@/lib/audience";
+import { describeAudit } from "@/lib/audit-labels";
+import { timeAgo } from "@/lib/time-ago";
+import {
   addPersonAction,
   addRuleAction,
+  announceAction,
+  autoRemindAction,
   matchAction,
   remindAction,
   removePersonAction,
   removeRuleAction,
   resendAction,
+  resendAllAction,
   sendAction,
   settingsAction,
   updatePersonAction,
@@ -25,26 +41,36 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
   const { id: groupId } = await params;
   const { supabase } = await requireAdmin(groupId);
 
-  const [{ data: group }, { data: members }, { data: contacts }, { data: rules }] = await Promise.all([
+  const [{ data: group }, { data: members }, { data: contacts }, { data: rules }, { data: activity }] = await Promise.all([
     supabase
       .from("groups")
-      .select("name, status, budget_min_cents, budget_max_cents, exchange_date, sent_at")
+      .select("name, status, budget_min_cents, budget_max_cents, exchange_date, sent_at, auto_remind")
       .eq("id", groupId)
       .single(),
     supabase
       .from("memberships")
-      .select("id, display_name, email, role, user_id, questionnaire_complete, match_email_status")
+      .select(
+        "id, display_name, email, role, user_id, questionnaire_complete, questionnaire_updated_at, match_email_status, match_email_sent_at, last_reminded_at, auto_reminder_count",
+      )
       .eq("group_id", groupId)
       .order("created_at"),
     supabase.from("member_contacts").select("membership_id, phone"),
     supabase.from("exclusion_rules").select("id, a_id, b_id, two_way").eq("group_id", groupId),
+    supabase.from("audit_log").select("id, action, details, actor_user_id, created_at").eq("group_id", groupId).order("created_at", { ascending: false }).limit(15),
   ]);
   if (!group || !members) return null;
 
   const phoneOf = new Map((contacts ?? []).map((c) => [c.membership_id as string, c.phone as string]));
   const nameOf = new Map(members.map((m) => [m.id as string, m.display_name as string]));
   const status = group.status as "draft" | "matched" | "sent";
-  const incomplete = members.filter((m) => !m.questionnaire_complete).length;
+  const info = members as unknown as RecipientInfo[];
+  const summary = summarize(info);
+  const now = Date.now();
+  const notDone = pickReminderTargets(info, "not_done", { now, includeRecent: true }).targets.length;
+  const notDoneFresh = pickReminderTargets(info, "not_done", { now }).targets.length;
+  const needsResend = pickResendTargets(info, "undelivered").length;
+  const notSignedIn = pickResendTargets(info, "not_signed_in").length;
+  const actorName = new Map(members.filter((m) => m.user_id).map((m) => [m.user_id as string, m.display_name as string]));
   const hidden = (name: string, value: string) => <input type="hidden" name={name} value={value} />;
   const gid = hidden("group_id", groupId);
 
@@ -71,6 +97,40 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
         <li className={status === "sent" ? "done" : status === "matched" ? "current" : ""}>Send</li>
       </ol>
 
+      {status === "sent" ? (
+        <section className="card" aria-label="Status">
+          <h2>Where things stand</h2>
+          <dl className="stats">
+            <div>
+              <dt>Opened their link</dt>
+              <dd>
+                {summary.signedIn} <span className="muted">of {summary.total}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Match email delivered</dt>
+              <dd>
+                {summary.emailed} <span className="muted">of {summary.total}</span>
+                {summary.emailFailed ? <span className="badge no">{summary.emailFailed} failed</span> : null}
+              </dd>
+            </div>
+            <div>
+              <dt>Questionnaire done</dt>
+              <dd>
+                {summary.done} <span className="muted">of {summary.total}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Started, not finished</dt>
+              <dd>{summary.started}</dd>
+            </div>
+          </dl>
+          <p className="muted small">
+            This never shows who has whom or what anyone answered. &ldquo;Done&rdquo; means the required questions are answered.
+          </p>
+        </section>
+      ) : null}
+
       {/* 1 + 2: people and rules */}
       <section className="card">
         <h2>1. People &amp; rules</h2>
@@ -93,11 +153,19 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
                       {m.email}
                       {phoneOf.get(m.id) ? ` · ${phoneOf.get(m.id)}` : ""}
                     </div>
+                    {status === "sent" ? (
+                      <div className="muted small">
+                        {m.match_email_sent_at ? `Match email ${timeAgo(m.match_email_sent_at, now)}` : "No match email yet"}
+                        {m.last_reminded_at ? ` · reminded ${timeAgo(m.last_reminded_at, now)}` : ""}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="badges">
                     <span className={m.user_id ? "badge yes" : "badge"}>{m.user_id ? "Signed in" : "Not signed in"}</span>
-                    <span className={m.questionnaire_complete ? "badge yes" : "badge"}>
-                      {m.questionnaire_complete ? "Questionnaire ✓" : "No questionnaire"}
+                    <span className={questionnaireState(m as unknown as RecipientInfo) === "done" ? "badge yes" : "badge"}>
+                      {{ done: "Questionnaire ✓", started: "Questionnaire started", not_started: "No questionnaire" }[
+                        questionnaireState(m as unknown as RecipientInfo)
+                      ]}
                     </span>
                     {status === "sent" ? (
                       <span className={m.match_email_status === "failed" ? "badge no" : m.match_email_status === "sent" ? "badge yes" : "badge"}>
@@ -282,20 +350,118 @@ export default async function AdminPage({ params }: { params: Promise<{ id: stri
         )}
       </section>
 
-      {/* Reminders */}
+      {/* Notifications */}
       <section className="card">
-        <h2>Reminders</h2>
+        <h2>Notifications</h2>
+
+        <h3>Remind people to fill out their questionnaire</h3>
         <p className="muted">
-          {incomplete === 0
+          {notDone === 0
             ? "Everyone has filled out their questionnaire 🎉"
-            : `${incomplete} of ${members.length} haven't filled out their questionnaire yet.`}
+            : `${notDone} of ${members.length} haven't finished. People reminded in the last ${REMINDER_COOLDOWN_MS / 3600000} hours are skipped unless you tick the box.`}
         </p>
-        {incomplete > 0 ? (
-          <ActionForm action={remindAction} confirm={`Email a reminder to the ${incomplete} people who haven't filled theirs out?`}>
+        {notDone > 0 ? (
+          <ActionForm action={remindAction} className="stack compact" confirm="Send these reminder emails now?">
             {gid}
-            <SubmitButton pendingText="Sending…">Remind everyone who hasn&apos;t filled it out</SubmitButton>
+            <label>
+              Who
+              <select name="audience" defaultValue="not_done">
+                {Object.entries(REMINDER_AUDIENCES).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Add a note (optional)
+              <textarea name="note" rows={2} maxLength={500} placeholder="e.g. Please finish by Sunday so we can all shop!" />
+            </label>
+            <label className="small check">
+              <input type="checkbox" name="include_recent" /> Include people reminded recently
+              {notDone !== notDoneFresh ? ` (${notDone - notDoneFresh} right now)` : ""}
+            </label>
+            <SubmitButton pendingText="Sending…">Send reminders</SubmitButton>
           </ActionForm>
         ) : null}
+
+        <h3>Send the match emails again</h3>
+        {status === "sent" ? (
+          <>
+            <p className="muted">
+              For anyone who lost their email or never got it. Each person gets a fresh link to their own match.
+              {needsResend ? ` ${needsResend} ${needsResend === 1 ? "email" : "emails"} failed or never went out.` : ""}
+              {notSignedIn ? ` ${notSignedIn} ${notSignedIn === 1 ? "person hasn't" : "people haven't"} opened their link yet.` : ""}
+            </p>
+            <ActionForm action={resendAllAction} className="stack compact" confirm="Resend match emails to the people you picked?">
+              {gid}
+              <label>
+                Who
+                <select name="audience" defaultValue={needsResend ? "undelivered" : notSignedIn ? "not_signed_in" : "everyone"}>
+                  {Object.entries(RESEND_AUDIENCES).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <SubmitButton pendingText="Sending…">Resend match emails</SubmitButton>
+            </ActionForm>
+          </>
+        ) : (
+          <p className="muted">Available after you press Send.</p>
+        )}
+
+        <h3>Announcement to everyone</h3>
+        <p className="muted">Your own message, for things like &ldquo;exchange is moved to Saturday.&rdquo; It never includes anyone&apos;s match.</p>
+        <ActionForm action={announceAction} className="stack compact" confirm={`Email this to all ${members.length} people now?`}>
+          {gid}
+          <label>
+            Subject
+            <input name="subject" required maxLength={100} autoComplete="off" />
+          </label>
+          <label>
+            Message
+            <textarea name="message" rows={4} required maxLength={2000} />
+          </label>
+          <SubmitButton pendingText="Sending…">Send announcement</SubmitButton>
+        </ActionForm>
+
+        <h3>Automatic reminders</h3>
+        <p className="muted">
+          {group.auto_remind
+            ? `On. Anyone who hasn't finished gets a reminder ${AUTO_REMIND.firstAfterMs / 86400000} days after Send, then every ${AUTO_REMIND.everyMs / 86400000} days, up to ${AUTO_REMIND.maxReminders} times. They stop on the exchange date or once someone finishes.`
+            : "Off. Turn on to nudge anyone who hasn't finished automatically. Nothing is sent until matches have gone out."}
+        </p>
+        <ActionForm action={autoRemindAction}>
+          {gid}
+          {hidden("enabled", group.auto_remind ? "0" : "1")}
+          <SubmitButton>{group.auto_remind ? "Turn off automatic reminders" : "Turn on automatic reminders"}</SubmitButton>
+        </ActionForm>
+      </section>
+
+      {/* Activity */}
+      <section className="card">
+        <details>
+          <summary>
+            <h2 className="inline-heading">Recent activity</h2>
+          </summary>
+          {activity && activity.length ? (
+            <ul className="activity">
+              {activity.map((a) => (
+                <li key={a.id as number}>
+                  <span>{describeAudit(a.action as string, (a.details ?? {}) as Record<string, unknown>)}</span>
+                  <span className="muted small">
+                    {a.actor_user_id ? `${actorName.get(a.actor_user_id as string) ?? "An organizer"} · ` : "Automatic · "}
+                    {timeAgo(a.created_at as string, now)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">Nothing yet.</p>
+          )}
+        </details>
       </section>
 
       {/* Settings */}

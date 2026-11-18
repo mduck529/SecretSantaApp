@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { assertUuid, requireAdmin } from "@/lib/auth";
 import * as svc from "@/lib/group-service";
+import * as notify from "@/lib/notify-service";
+import { isReminderAudience, isResendAudience } from "@/lib/audience";
 import type { ActionState } from "@/components/action-form";
 
 /**
@@ -71,7 +73,33 @@ export async function resendAction(_p: ActionState, fd: FormData): Promise<Actio
 export async function remindAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   const { groupId, actor } = await ctx(fd);
   const memberId = fd.get("member_id");
-  return done(groupId, await svc.sendReminders(groupId, actor, memberId ? assertUuid(memberId) : null));
+  const audience = fd.get("audience");
+  return done(
+    groupId,
+    await notify.sendReminders(groupId, actor, {
+      memberId: memberId ? assertUuid(memberId) : null,
+      audience: isReminderAudience(audience) ? audience : "not_done",
+      note: str(fd, "note"),
+      includeRecent: fd.get("include_recent") === "on",
+    }),
+  );
+}
+
+export async function resendAllAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { groupId, actor } = await ctx(fd);
+  const audience = fd.get("audience");
+  if (!isResendAudience(audience)) return { ok: false, message: "Pick who to resend to." };
+  return done(groupId, await notify.resendMatches(groupId, actor, audience));
+}
+
+export async function announceAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { groupId, actor } = await ctx(fd);
+  return done(groupId, await notify.sendAnnouncement(groupId, actor, { subject: str(fd, "subject"), message: str(fd, "message") }));
+}
+
+export async function autoRemindAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { groupId, actor } = await ctx(fd);
+  return done(groupId, await notify.setAutoRemind(groupId, actor, fd.get("enabled") === "1"));
 }
 
 export async function settingsAction(_p: ActionState, fd: FormData): Promise<ActionState> {

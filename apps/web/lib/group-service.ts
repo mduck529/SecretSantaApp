@@ -13,7 +13,7 @@ import {
 import { createAdminClient } from "./supabase/admin";
 import { signInLink } from "./links";
 import { sendEmails, type OutgoingEmail } from "./email/send";
-import { matchEmail, profileUpdatedEmail, reminderEmail } from "./email/templates";
+import { matchEmail, profileUpdatedEmail } from "./email/templates";
 
 /**
  * Organizer actions. This module reads matches with the service role so it can
@@ -27,18 +27,20 @@ import { matchEmail, profileUpdatedEmail, reminderEmail } from "./email/template
 
 export type Outcome = { ok: boolean; message: string };
 
-type Db = ReturnType<typeof createAdminClient>;
+export type Db = ReturnType<typeof createAdminClient>;
 
-interface Group {
+export interface Group {
   id: string;
   name: string;
   status: "draft" | "matched" | "sent";
+  sent_at: string | null;
+  auto_remind: boolean;
   budget_min_cents: number;
   budget_max_cents: number;
   exchange_date: string | null;
 }
 
-interface Member {
+export interface Member {
   id: string;
   display_name: string;
   email: string;
@@ -53,7 +55,7 @@ const PROFILE_NOTIFY_THROTTLE_MS = 30 * 60 * 1000;
 // Small helpers
 // ---------------------------------------------------------------------------
 
-async function assertAdmin(db: Db, groupId: string, actorUserId: string) {
+export async function assertAdmin(db: Db, groupId: string, actorUserId: string) {
   const { data } = await db
     .from("memberships")
     .select("id")
@@ -64,17 +66,17 @@ async function assertAdmin(db: Db, groupId: string, actorUserId: string) {
   if (!data) throw new Error("Not an organizer of this group");
 }
 
-async function loadGroup(db: Db, groupId: string): Promise<Group> {
+export async function loadGroup(db: Db, groupId: string): Promise<Group> {
   const { data, error } = await db
     .from("groups")
-    .select("id, name, status, budget_min_cents, budget_max_cents, exchange_date")
+    .select("id, name, status, sent_at, auto_remind, budget_min_cents, budget_max_cents, exchange_date")
     .eq("id", groupId)
     .single();
   if (error) throw error;
   return data as Group;
 }
 
-async function loadMembers(db: Db, groupId: string): Promise<Member[]> {
+export async function loadMembers(db: Db, groupId: string): Promise<Member[]> {
   const { data, error } = await db
     .from("memberships")
     .select("id, display_name, email, role, questionnaire_updated_at")
@@ -96,7 +98,7 @@ async function loadAssignments(db: Db, groupId: string): Promise<Assignment[]> {
   return data.map((a) => ({ giver: a.giver_id as string, receiver: a.receiver_id as string }));
 }
 
-async function audit(db: Db, groupId: string, actorUserId: string | null, action: string, details: Record<string, unknown> = {}) {
+export async function audit(db: Db, groupId: string, actorUserId: string | null, action: string, details: Record<string, unknown> = {}) {
   await db.from("audit_log").insert({ group_id: groupId, actor_user_id: actorUserId, action, details });
 }
 
@@ -178,7 +180,7 @@ async function clearUnsentMatch(db: Db, groupId: string): Promise<boolean> {
 
 const clearedNote = " The earlier matches were cleared (nothing had been sent), so press Match again.";
 
-function asOutcome(err: unknown): Outcome {
+export function asOutcome(err: unknown): Outcome {
   if (err instanceof Error && !("code" in err)) return { ok: false, message: err.message };
   console.error(err);
   return { ok: false, message: "Something went wrong. Please try again." };
@@ -453,7 +455,7 @@ export async function matchGroup(
  * Emails each listed giver their match. Reads pairings internally; returns only counts.
  * `changedIds` get the "your match has changed" wording.
  */
-async function emailMatches(
+export async function emailMatches(
   db: Db,
   group: Group,
   giverIds: readonly string[],
@@ -545,42 +547,8 @@ export async function resendMatch(groupId: string, actorUserId: string, memberId
 }
 
 // ---------------------------------------------------------------------------
-// Reminders and profile-update notifications
+// Profile-update notifications (reminders and announcements: notify-service.ts)
 // ---------------------------------------------------------------------------
-
-/** Reminder emails: one person, or everyone who hasn't completed their questionnaire. */
-export async function sendReminders(groupId: string, actorUserId: string, memberId: string | null): Promise<Outcome> {
-  const db = createAdminClient();
-  try {
-    await assertAdmin(db, groupId, actorUserId);
-    const group = await loadGroup(db, groupId);
-    const { data, error } = await db
-      .from("memberships")
-      .select("id, display_name, email, questionnaire_complete")
-      .eq("group_id", groupId);
-    if (error) throw error;
-    const targets = memberId ? data.filter((m) => m.id === memberId) : data.filter((m) => !m.questionnaire_complete);
-    if (!targets.length) return { ok: true, message: "Everyone has filled theirs out. Nobody to remind 🎉" };
-
-    const emails: OutgoingEmail[] = [];
-    for (const m of targets) {
-      emails.push(
-        reminderEmail({ to: m.email, name: m.display_name, groupName: group.name, link: await signInLink(m.email, `/g/${groupId}#questionnaire`) }),
-      );
-    }
-    const results = await sendEmails(emails);
-    const okIds = targets.filter((_, i) => results[i]).map((m) => m.id);
-    if (okIds.length) await db.from("memberships").update({ last_reminded_at: new Date().toISOString() }).in("id", okIds);
-    await audit(db, groupId, actorUserId, "reminded", { count: okIds.length });
-    const failed = targets.length - okIds.length;
-    return {
-      ok: failed === 0,
-      message: `Reminder sent to ${okIds.length === 1 && targets[0] ? targets[0].display_name : `${okIds.length} people`} ✓${failed ? ` (${failed} failed)` : ""}`,
-    };
-  } catch (err) {
-    return asOutcome(err);
-  }
-}
 
 /**
  * Emails Santas whose giftee updated their questionnaire. Runs after each save
