@@ -348,7 +348,7 @@ function Bracket({ q, value }: { q: Extract<Question, { kind: "bracket" }>; valu
         <>
           <p className="bracket-intro">{q.hint}</p>
           <div className="bracket-status">
-            <span className="bracket-count" role="status" aria-live="polite">
+            <span className="bracket-count" aria-live="polite" aria-atomic="true">
               Match {step.number} of {BRACKET_MATCHES}
               <span className="bracket-round"> · {step.round}</span>
             </span>
