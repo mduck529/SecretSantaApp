@@ -11,6 +11,11 @@ export const publicEnv = {
 
 export const serverEnv = {
   supabaseServiceRoleKey: () => required("SUPABASE_SERVICE_ROLE_KEY"),
+  /**
+   * Signs the sign-in links in our emails. Optional: falls back to the service-role key
+   * (a separate key is derived from it). Changing it stops every link already sent.
+   */
+  emailLinkSecret: () => process.env.EMAIL_LINK_SECRET || required("SUPABASE_SERVICE_ROLE_KEY"),
   appUrl: () => required("APP_URL").replace(/\/+$/, ""),
   /**
    * SMTP login for sending email (Gmail by default). Optional in development: without
