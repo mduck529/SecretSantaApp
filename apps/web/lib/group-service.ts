@@ -587,6 +587,12 @@ export async function sendReminders(groupId: string, actorUserId: string, member
  * and from a daily cron. Throttled to one email per giftee per 30 minutes; anything
  * held back goes out on the next run.
  */
+/** Embedded many-to-one rows can come back as an object or a one-item array. */
+function groupNameOf(groups: unknown): string | undefined {
+  const g = (Array.isArray(groups) ? groups[0] : groups) as { name?: unknown } | null | undefined;
+  return typeof g?.name === "string" ? g.name : undefined;
+}
+
 export async function deliverProfileUpdates(): Promise<number> {
   const db = createAdminClient();
   const { data: rows, error } = await db.from("profile_notifications").select("membership_id, last_edit_at, notified_at");
@@ -602,7 +608,7 @@ export async function deliverProfileUpdates(): Promise<number> {
   const gifteeIds = due.map((r) => r.membership_id as string);
   const { data: pairs, error: pairsError } = await db
     .from("assignments")
-    .select("giver_id, receiver_id, group_id, groups!inner(status)")
+    .select("giver_id, receiver_id, group_id, groups!inner(status, name)")
     .in("receiver_id", gifteeIds)
     .eq("groups.status", "sent");
   if (pairsError) throw pairsError;
@@ -627,6 +633,7 @@ export async function deliverProfileUpdates(): Promise<number> {
         to: santa.email as string,
         name: santa.display_name as string,
         giftee: giftee.display_name as string,
+        groupName: groupNameOf(p.groups),
         link: await signInLink(santa.email as string, `/g/${p.group_id}#match`),
       }),
     );
